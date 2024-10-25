@@ -1,7 +1,7 @@
 absl-py==1.4.0
 aenum==3.1.15
 affine==2.4.0
-ai4boundaries @ git+https://github.com/waldnerf/ai4boundaries@defd23b2537f6d3d54fb97c1cc57f63d904ebced
+#ai4boundaries @ git+https://github.com/waldnerf/ai4boundaries@defd23b2537f6d3d54fb97c1cc57f63d904ebced
 aiofiles==24.1.0
 aiohappyeyeballs==2.4.0
 aiohttp==3.10.5
