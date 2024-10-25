@@ -1,3 +1,6 @@
+# At the top of the code, along with the other `import`s
+from __future__ import annotations
+
 import tensorflow as tf
 import os
 import json
@@ -9,7 +12,8 @@ import pandas as pd
 from enum import Enum
 import json
 import socket
-import nvtx
+import shutil
+#import nvtx
 
 # Add the src directory to the path
 src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -260,6 +264,7 @@ def initialise_callbacks(model_path):
     tensorboard_callback = tf.keras.callbacks.TensorBoard(
         log_dir=logs_path,
         update_freq=TENSORBOARD_UPDATE_FREQ,
+        profile_batch='120,130', # 500,510
     )
 
     checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
@@ -394,7 +399,7 @@ def training_main(
         iterations_per_epoch: int,
         batch_size: int):
     """
-    Trains a model using the train and validation datasets and performs evaluation on the 
+    Trains a model using the train and validation datasets and performs evaluation on the
     testing dataset.
     Generates the following files and directories:
     - hyperparameters.json: The hyperparameters used for training.
@@ -441,6 +446,12 @@ def training_main(
         json.dump(CONFIG_TRAINING, jfile, indent=4)
     with open(f'{model_folder}/model_cfg.json', 'w') as jfile:
         json.dump(model_config, jfile, indent=4)
+
+    with open(f'{model_folder}/config.json', 'w') as jfile:
+        json.dump(CONFIG, jfile, indent=4)
+    # copy split data to model directory
+    shutil.copy(Path(f'{NIVA_PROJECT_DATA_ROOT}/training_data/sentinel2/ai4boundaries_ftp_urls_sentinel2_split.csv'),
+                model_folder)
 
     # Load datasets
     LOGGER.info(
