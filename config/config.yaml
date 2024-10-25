@@ -1,7 +1,7 @@
 # Config file for the project
 
 # GENERAL
-niva_project_data_root: null # TO SET
+niva_project_data_root: "home/niva/ai4boundaries_data" # TO SET
 
 # PREPROCESSING
 download_data:
@@ -15,7 +15,7 @@ create_eopatches:
   # no modifiable parameters
 
 create_npz:
-  npz_chunk_size: 20
+  npz_chunk_size: 40
 
 create_datasets:
   shuffle_buffer_size: 2000
@@ -50,9 +50,9 @@ model:
 
 # TRAINING
 training:
-  num_epochs: 30
-  batch_size: 8
-  iterations_per_epoch: -1
+  num_epochs: 2 # planed 80-100 epochs
+  batch_size: 128
+  iterations_per_epoch: 245 #  5236 * 6 // batch_size
   training_type: "SingleWorker"
   use_npz: false
   tf_full_profiling: false
