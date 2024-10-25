@@ -212,12 +212,17 @@ def eopatches_to_npz_files():
         # Compute chunks
         nb_chunks = len(eopatches_paths) // NPZ_CHUNK_SIZE
         lost = len(eopatches_paths) % NPZ_CHUNK_SIZE
+        # chunks = [eopatches_paths[i:i + NPZ_CHUNK_SIZE]
+        #           for i in range(0, len(eopatches_paths) - lost + 1, NPZ_CHUNK_SIZE)]
+        if lost:
+            lost -= 1  # getting last not full chunk
         chunks = [eopatches_paths[i:i + NPZ_CHUNK_SIZE]
-                  for i in range(0, len(eopatches_paths) - lost + 1, NPZ_CHUNK_SIZE)]
+                  for i in range(0, len(eopatches_paths) - lost, NPZ_CHUNK_SIZE)]
 
         LOGGER.info(
             f'Processing {len(eopatches_paths)} patchlets in {len(chunks)} chunks '
-            f'containing {NPZ_CHUNK_SIZE} eopatches each')
+            f'containing {NPZ_CHUNK_SIZE} eopatches each and the last one contains '
+            f'{len(eopatches_paths) % NPZ_CHUNK_SIZE if len(eopatches_paths) % NPZ_CHUNK_SIZE else NPZ_CHUNK_SIZE}')
 
         # Process chunks in parallel
         df_list = []
