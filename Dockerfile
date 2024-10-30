@@ -2,9 +2,10 @@
 FROM nvcr.io/nvidia/tensorflow:23.03-tf2-py3
 
 # Set environment variables for easier reference
-ENV NIVA_PATH=/home/niva \
-    SOFTWARE_PATH=$NIVA_PATH/software \
-    LIBGEOS_PATH=$SOFTWARE_PATH/libgeos 
+# ENV NIVA_PATH=/home/niva \
+#     SOFTWARE_PATH=$NIVA_PATH/software \
+#     LIBGEOS_PATH=$SOFTWARE_PATH/libgeos
+ENV NIVA_PATH=/home/niva
 
 # Create necessary directories
 RUN mkdir -p $NIVA_PATH $NIVA_PATH/ai4boundaries_data
@@ -31,20 +32,7 @@ RUN apt-get update && \
     libgeos++-dev libgeos-dev libgeos-doc \
     && rm -rf /var/lib/apt/lists/*
 
-# LibGeos installation
-# apt-get install libgeos-dev
-
-# RUN git clone https://github.com/libgeos/geos.git $LIBGEOS_PATH && \
-#     rm -rf $LIBGEOS_PATH/build $LIBGEOS_PATH/install && \
-#     mkdir -p $LIBGEOS_PATH/build $LIBGEOS_PATH/install
-# RUN cd $LIBGEOS_PATH/build && cmake -DCMAKE_INSTALL_PREFIX=$LIBGEOS_PATH/install .. && \
-#     make -j && \
-#     make install -j
-
-# ENV PATH=$LIBGEOS_PATH/install/bin:$PATH \
-#     LD_LIBRARY_PATH=$LIBGEOS_PATH/install/lib:$LD_LIBRARY_PATH
-
-# Clone Niva_Project's docker_env_creation branch
+# Clone Niva_Project's docker_env_creation(main) branch
 RUN cd $NIVA_PATH && \
     git clone -b docker_env_creation https://github.com/DaFab-AI-eu/NIVA-model.git niva_repo
 
@@ -54,4 +42,5 @@ RUN pip install --upgrade pip && \
 
 # Entry point
 WORKDIR $NIVA_PATH/niva_repo
-CMD ["/bin/bash"]
+# needed to overide base image CMD and to keep container running
+CMD ["sleep", "999999"]
