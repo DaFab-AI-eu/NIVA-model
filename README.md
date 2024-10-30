@@ -14,7 +14,7 @@ This section will guide you on setting up the project and executing the full dee
 
 #### Python
 
-This project uses python 3.10, that can be installed alongside other versions.
+This project uses python 3.10 (`requirements_training_py3_10.txt`), that can be installed alongside other versions.
 
 * Add python repository
 
@@ -61,6 +61,44 @@ the `psycopg2` package
 
 * to install from source, see <https://www.postgresql.org/docs/current/installation.html>
 
+#### Docker
+
+The training could be done from docker container that already includes NVIDIA GPU 
+libraries (CUDA, NCCL, cuDNN, ...) needed and installation of requirements (see `Dockerfile`). The source, see <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow>
+
+The image doesn't include tracing libraries (e. g. Darshan). 
+
+The base image of docker uses `python3.8`. That means requirements differ for `python3.8` (`requirements_training.txt`) and `python3.10` (`requirements_training_py3_10.txt`).
+
+| Package      | python 3.10  | python 3.8 |
+|--------------|--------------|------------|
+| dask         | 2024.7.0     | 2023.5.0   |
+| h5netcdf     | 1.3.0        | 1.1.0      |
+| llvmlite     | 0.43.0       | 0.41.1     |
+| ml-dtypes    | 0.4.0        | 0.2.0      |
+| numba        | 0.60.0       | 0.58.1     |
+| numpy        | 1.26.4       | 1.24.4     |
+| pandas       | 2.2.2        | 2.0.3      |
+| partd        | 1.4.2        | 1.4.1      |
+| pyproj       | 3.6.1        | 3.5.0      |
+| scipy        | 1.14.0       | 1.10.1     |
+| xarray       | 2024.9.0     | 2023.1.0   |
+
+
+##### Docker set up
+
+Build the container
+
+``` bash
+docker build -t niva_model:latest .
+```
+Run the container
+
+``` bash
+docker run --gpus all -d --name niva_model -v [/outside]:[/inside] -p 127.0.0.1:8080:8080 --shm-size=1g --ulimit memlock=-1 --privileged=true niva_model:latest
+docker exec -it niva_model /bin/bash  
+```
+
 #### To use profiling tools
 
 The project comes with a script allowing the use of the [Darshan I/O profiler](https://docs.nersc.gov/tools/performance/darshan/) or the [Nsight system performance analysis tool](https://developer.nvidia.com/nsight-systems) during training and data preprocessing. Both should be installed to generate traces.
@@ -89,7 +127,7 @@ Thus, if you work in a HPC environment, Darshan and Nsight should be installed o
 #### 1. Clone the repository
 
 ```sh
-git clone https://github.com/Jodp1905/Niva_Project.git
+git clone https://github.com/DaFab-AI-eu/NIVA-model.git
 ```
 
 #### 2. Configure the project
@@ -119,7 +157,8 @@ You may also add the line to your ~/.bashrc file for convenience.
 You can download the necessary python packages by using the requirements files at
 the root of the project:
 
-* **`requirements_training.txt`** contains necessary packages for running the training
+* **`requirements_training.txt`** (python 3.8) contains necessary packages for running the training
+* **`requirements_training_py_3_10.txt`** (python 3.10) contains necessary packages for running the training
 * **`requirements_inference.txt`** contains necessary packages for running the inference pipeline
 
 They are separated to allow for more flexibility in the install process as the inference pipeline
