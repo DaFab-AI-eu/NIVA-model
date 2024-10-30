@@ -34,7 +34,7 @@ RUN apt-get update && \
 
 # Clone Niva_Project's docker_env_creation(main) branch
 RUN cd $NIVA_PATH && \
-    git clone -b docker_env_creation https://github.com/DaFab-AI-eu/NIVA-model.git niva_repo
+    git clone -b main https://github.com/DaFab-AI-eu/NIVA-model.git niva_repo
 
 # Install env from requirements
 RUN pip install --upgrade pip && \
