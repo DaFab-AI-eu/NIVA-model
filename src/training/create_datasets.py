@@ -201,7 +201,8 @@ def get_dataset(npz_folder: str, fold_type: str) -> tf.data.Dataset:
     dataset = tf.data.Dataset.from_tensor_slices(datasets)
 
     # Shuffle files and interleave multiple files in parallel
-    dataset = dataset.shuffle(buffer_size=SHUFFLE_BUFFER_SIZE)
+    if fold_type == 'train':
+        dataset = dataset.shuffle(buffer_size=SHUFFLE_BUFFER_SIZE)
     dataset = dataset.interleave(lambda x: x,
                                  cycle_length=INTERLEAVE_CYCLE_LENGTH,
                                  num_parallel_calls=tf.data.experimental.AUTOTUNE)
@@ -209,9 +210,9 @@ def get_dataset(npz_folder: str, fold_type: str) -> tf.data.Dataset:
     if LOGGER.level == logging.DEBUG:
         describe_tf_dataset(dataset, fold_type, "Before augmentation")
     normalizer = NORMALIZER["to_medianstd"]
-
+    # TODO check that augmentations are working for training
     augmentations = [augment_data(
-        AUGMENTATIONS_FEATURES, AUGMENTATIONS_LABEL)] if ENABLE_AUGMENTATION else []
+        AUGMENTATIONS_FEATURES, AUGMENTATIONS_LABEL)] if ENABLE_AUGMENTATION and fold_type == 'train' else []
     dataset_ops = (
         [normalizer, Unpack(), ToFloat32()] +
         augmentations +
@@ -256,6 +257,7 @@ def create_datasets():
         dataset_folder.mkdir(parents=True, exist_ok=True)
         dataset_folder_path = dataset_folder.as_posix()
         dataset = get_dataset(npz_folder, fold_type)
+        # good practice to do shard before .map
         if USE_FILE_SHARDING:
             dataset.save(path=dataset_folder_path, shard_func=shard_func)
         else:

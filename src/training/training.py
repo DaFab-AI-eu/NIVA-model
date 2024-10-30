@@ -261,10 +261,11 @@ def initialise_callbacks(model_path):
     logs_path = os.path.join(model_path, 'logs')
     checkpoints_path = os.path.join(model_path, 'checkpoints', 'model.ckpt')
 
+    # TODO figure out right installation to make profiling work (https://www.tensorflow.org/guide/profiler)
     tensorboard_callback = tf.keras.callbacks.TensorBoard(
         log_dir=logs_path,
         update_freq=TENSORBOARD_UPDATE_FREQ,
-        profile_batch='120,130', # 500,510
+        # profile_batch='120,130', middle of training epoch
     )
 
     checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
