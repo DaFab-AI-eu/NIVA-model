@@ -50,7 +50,7 @@ model:
 
 # TRAINING
 training:
-  num_epochs: 2 # planed 80-100 epochs
+  num_epochs: 50 # planed 80-100 epochs
   batch_size: 128
   iterations_per_epoch: 245 #  5236 * 6 // batch_size
   training_type: "SingleWorker"
