@@ -1,7 +1,7 @@
 # Config file for the project
 
 # GENERAL
-niva_project_data_root: null # TO SET
+niva_project_data_root: "/home/niva/ai4boundaries_data" # TO SET
 
 # PREPROCESSING
 download_data:
@@ -15,7 +15,7 @@ create_eopatches:
   # no modifiable parameters
 
 create_npz:
-  npz_chunk_size: 20
+  npz_chunk_size: 40
 
 create_datasets:
   shuffle_buffer_size: 2000
@@ -50,9 +50,9 @@ model:
 
 # TRAINING
 training:
-  num_epochs: 30
-  batch_size: 8
-  iterations_per_epoch: -1
+  num_epochs: 50 # planed 80-100 epochs
+  batch_size: 128
+  iterations_per_epoch: 245 #  5236 * 6 // batch_size
   training_type: "SingleWorker"
   use_npz: false
   tf_full_profiling: false
@@ -64,25 +64,31 @@ training:
   lustre_llite_dir: "/mnt/lustre-stats/llite" # TO SET if you want to use Nsight lustre plugin
 
 # INFERENCE
+niva_project_data_root_inf: "inference" # TO SET
+# TILE_ID: "S2A_30UWU_20230302_0_L2A"  # Tile in région Bretagne
+TILE_ID: "S2B_31TEN_20230420_0_L2A"  # Paste your own tile id to process (région Bourgogne-Franche-Comté)
 
 # tile download configuration
 download_tile:
-  input_coords_path: null # TO SET
-  tile_name: "input_tile.nc"
+  tile_id: ["S2B_31TEN_20230420_0_L2A"]  # same as TILE_ID
   xarray_chunk_size: 2048
 
 # sub-tile split configuration
 split_config:
   height: 1000
   width: 1000
-  overlap: 0
-  num_split: -1 # all sub-tile splits with parameter -1
+  overlap: 200
+  num_split: -1  # all sub-tile splits with parameter -1
   begin_x: 0
   begin_y: 0
+  bad_percentage: 0.70  # max percentage of bad pixels in the patch to not consider it at all
+  vgt_percentage: 0.1  # min vegetation percentage to consider for crop fields
+  cld_percentage: 0.15  # for accuracy computation should be low
 
 # prediction configuration
 prediction_config:
-  model_path: null # TO SET
+  model_path: "checkpoints"  # paste your own path to model checkpoint !!!!
+  model_cfg_path: "model_cfg.json" # paste your own path to model configs !!!!
   height: 1024 # eopatch height + 2 pad_buffer, should by div by 32 filter of model
   width: 1024 # eopatch width + 2 pad_buffer, should by div by 32 filter of model
   n_channels: 4
@@ -92,23 +98,39 @@ prediction_config:
 
 # combine sub-tile splits configuration
 combine_config:
-  scale_factor: 1
-  disk_size: 1
+  scale_factor: 2
+  disk_size: 2
+  workers: 8
 
 # vectorize configuration
 vectorize_config:
-  shape: [4000, 4000] # scale_factor * scale_factor=2 * EOPatch shape = 1000
+  shape: [4000, 4000] # scale_factor * scale_factor=2 * 2 * EOPatch shape = 1000
   buffer: [200, 200]
   chunk_size: 500
-  chunk_overlap: 100
+  chunk_overlap: 10
   threshold: 0.6
   cleanup: true
   skip_existing: true
   rows_merging: true
+  max_workers: 8
 
 # POSTPROCESSING
 postprocess_config:
   simplify_tolerance: 2.5
   smallest_area: 2
   biggest_area: 10000000
-  version: 1.3
+  version: 1.6
+
+
+# accuracy computations
+# First step download GT data to compare to
+download_cadastre:
+  sub_name: "RPG_2-2__SHP_LAMB93_R27_2023-01-01"  # (région Bourgogne-Franche-Comté)
+  sim_tolerance: 5
+  chunk_size: 20480
+  flag_download: True
+
+# Second step convert vector -> raster and compute metrics
+accuracy_computation:
+  version: 1.6  # as in postprocess_config
+  visualize: True
