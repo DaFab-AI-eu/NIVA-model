@@ -38,6 +38,7 @@ def display_cm(cm):
 
 
 def compute_iou_from_cm(cm):
+    # TODO when there is no field pred and gt IoU should be 1
     # compute mean iou
     # iou = true_positives / (true_positives + false_positives + false_negatives)
     intersection = np.diag(cm)
@@ -51,8 +52,6 @@ def compute_iou_from_cm(cm):
 def compute_iou(y_true, y_pred, cm_display=True):
     y_pred = y_pred.flatten()
     y_true = y_true.flatten()
-    LOGGER.info(f"y_true fields ={np.count_nonzero(y_true) / len(y_true)}, "
-                f"y_pred fields ={np.count_nonzero(y_pred) / len(y_pred)}")
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     if cm_display:
         display_cm(cm / len(y_true))
@@ -62,24 +61,22 @@ def compute_iou(y_true, y_pred, cm_display=True):
 def comp_scores(mask_gt, mask_pred):
     mask_gt = mask_gt.flatten()
     mask_pred = mask_pred.flatten()
-    score_names = ["accuracy_score", "matthews_corrcoef", "cohen_kappa_score"]
-    score_vals = []
-    score_vals.append(accuracy_score(mask_gt, mask_pred))
-    score_vals.append(matthews_corrcoef(mask_gt, mask_pred))
-    score_vals.append(cohen_kappa_score(mask_gt, mask_pred))
+    metrics_dict = {}
+    func_perc = lambda arr: arr[arr == 1].sum() / len(arr)
+    metrics_dict["CADASTRE_fields_prc"] = func_perc(mask_gt)
+    metrics_dict["PREDICTED_fields_prc"] = func_perc(mask_pred)
+    metrics_dict["accuracy_score"] = accuracy_score(mask_gt, mask_pred)
+    # TODO when there is no field pred and gt matthews_corrcoef should be 1
+    metrics_dict["matthews_corrcoef"] = matthews_corrcoef(mask_gt, mask_pred)
+    # TODO when there is no field pred and gt cohen_kappa_score should be 1
+    metrics_dict["cohen_kappa_score"] = cohen_kappa_score(mask_gt, mask_pred)
     cm, iou = compute_iou(y_pred=mask_pred, y_true=mask_gt, cm_display=VISUALIZE)
-    score_names.append("iou")
-    score_vals.append(iou)
-
+    metrics_dict["iou"] = iou
     cm_normalized = cm / cm.sum()
-    score_name_ = ["TN (no field t, no field p)", "FP (no field t, field p)",
+    score_names = ["TN (no field t, no field p)", "FP (no field t, field p)",
                    "FN (field t, no field p)", "TP (field t, field p)"]
-    score_names.extend(score_name_)
-    score_vals.extend(cm_normalized.flatten().tolist())
-
-    score_names.append("cm")
-    score_vals.append(cm)
-    return score_names, score_vals
+    metrics_dict.update(dict(zip(score_names, cm_normalized.flatten().tolist())))
+    return metrics_dict
 
 
 def get_masks_pred_gt(eopatch_folder, cadastre_tile_path,
@@ -99,13 +96,27 @@ def get_masks_pred_gt(eopatch_folder, cadastre_tile_path,
         main_rastorize_vector(rasterise_gsaa_config)
 
 
+def vector_analyses(vector, sub_name='CADASTRE'):
+    areas = vector.area # in square meters
+    metrics_dict = {
+        f"{sub_name}_num_pol": len(vector),
+        f"{sub_name}_max_areas/m^2": areas.max(),
+        f"{sub_name}_min_areas/m^2": areas.min(),
+        f"{sub_name}_avg_areas/m^2": areas.mean(),
+    }
+    return metrics_dict
+
 def display_metrics(eopatch_folder):
     eopatch = EOPatch.load(eopatch_folder)
+    metrics_dict = {}
+    for sub_name in ['CADASTRE', 'PREDICTED']:
+        metrics_dict.update(vector_analyses(eopatch.vector_timeless[sub_name],
+                                            sub_name=sub_name))
     mask_gt = eopatch.mask_timeless['EXTENT_CADASTRE'].squeeze()
     mask_pred = eopatch.mask_timeless['EXTENT_PREDICTED'].squeeze()
-    scores_names, score_vals = comp_scores(mask_pred=mask_pred, mask_gt=mask_gt)
-    LOGGER.info(f"Metrics for patch {eopatch_folder} \n {dict(zip(scores_names, score_vals))}")
-    return scores_names, score_vals
+    metrics_dict.update(comp_scores(mask_pred=mask_pred, mask_gt=mask_gt))
+    LOGGER.info(f"Metrics for patch {eopatch_folder} \n {metrics_dict}")
+    return metrics_dict
 
 
 def visualize_eopatch(eop):
@@ -174,48 +185,57 @@ def main():
     parser.add_argument("-p", "--pred_file_path", type=str, required=True)
     parser.add_argument("-e", "--eopatches_folder", type=str, required=True)
     parser.add_argument("-o", "--metrics_path", type=str, required=True)
+    parser.add_argument("--field_prc", type=float, required=False, default=0.05)
 
     args = parser.parse_args()
 
     cadastre_tile_path = args.cadastre_tile_path
     pred_file_path = args.pred_file_path
     metrics_path = args.metrics_path
+    field_prc = args.field_prc
+    # percentage of fields in the patch for cadastre data to compute accuracy
 
     eopatches_path = [f.path for f in os.scandir(
         args.eopatches_folder) if f.is_dir() and f.name.startswith('eopatch')]
 
-    score_vals_list = []
-    cms_list = []
+    score_list = []
     for eopatch_folder in tqdm(eopatches_path):
         # creates gt and predicted masks from vectors (MOST important method)
         get_masks_pred_gt(eopatch_folder, cadastre_tile_path, pred_file_path)
 
-        if VISUALIZE:
+        if VISUALIZE:  # for all visualizations eopatch image (rgb) is needed
             eopatch = EOPatch.load(eopatch_folder)
             visualize_eopatch(eopatch)
 
-        scores_names, score_vals = display_metrics(eopatch_folder)
-        score_vals, cm = score_vals[:-1], score_vals[-1]
-        score_vals_list.append(score_vals)
-        cms_list.append(cm)
+        metrics_dict = display_metrics(eopatch_folder)
+        score_list.append(metrics_dict)
 
-    cm_all = np.stack(cms_list).sum(axis=0)
-    iou_all = compute_iou_from_cm(cm_all)
-    cm_all = cm_all.astype(float)
-    cm_all /= cm_all.sum().astype(cm_all.dtype)
-    display_cm(cm_all)
+    metrics_df = pd.DataFrame(score_list)
 
+    col_mean = ['CADASTRE_num_pol', 'CADASTRE_max_areas/m^2',
+                'CADASTRE_min_areas/m^2', 'CADASTRE_avg_areas/m^2',
+                'PREDICTED_num_pol', 'PREDICTED_max_areas/m^2',
+                'PREDICTED_min_areas/m^2', 'PREDICTED_avg_areas/m^2',
+                'CADASTRE_fields_prc', 'PREDICTED_fields_prc', 'accuracy_score',
+                'matthews_corrcoef', 'cohen_kappa_score', 'iou',
+                'TN (no field t, no field p)', 'FP (no field t, field p)',
+                'FN (field t, no field p)', 'TP (field t, field p)']
+
+    # in case cadastre data is not available for the whole tile
+    flag_data = ((metrics_df['CADASTRE_fields_prc'] < field_prc) &
+                 (metrics_df['PREDICTED_fields_prc'] > field_prc))
+    LOGGER.info(f"EOpatches number with predicted fields "
+                f"but not available cadastre data for comparison \n {len(metrics_df[flag_data])}")
+    # compute mean metrics only for the patches with available cadastre data
+    mean = metrics_df[~flag_data][col_mean].mean(axis=0)
+    metrics_df["no_CADASTRE_data"] = flag_data
+    metrics_df = pd.concat([metrics_df, pd.DataFrame([mean])], axis=0)
+
+    metrics_df["eopatch_folder"] = eopatches_path + ["mean"]
+    metrics_df["count_no_CADASTRE_data"] = metrics_df["no_CADASTRE_data"].sum()
     # create metrics file
-    score_vals_list.append(np.array(score_vals_list).mean(axis=0).tolist())
-    metrics_final = pd.DataFrame(columns=["eopatch_folder", "iou_all"] + scores_names[:-1])
-    metrics_final["eopatch_folder"] = eopatches_path + ["mean"]
-    metrics_final[scores_names[:-1]] = score_vals_list
-    metrics_final.loc[metrics_final["eopatch_folder"] == "mean", scores_names[-5:-1]] = cm_all.flatten().tolist()
-    metrics_final.loc[metrics_final["eopatch_folder"] == "mean", "iou_all"] = iou_all
-    metrics_final.to_csv(metrics_path)
-
-    LOGGER.info(f"confusion matrics for the all eopatches combined {cm_all}")
-    LOGGER.info(f"Mean Metrics \n {metrics_final.iloc[-1]}")
+    metrics_df.to_csv(metrics_path, index=False)
+    LOGGER.info(f"Mean Metrics \n {metrics_df.iloc[-1]}")
 
 
 if __name__ == "__main__":
