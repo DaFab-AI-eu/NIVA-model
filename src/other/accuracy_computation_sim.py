@@ -3,6 +3,8 @@ import glob
 import os
 import sys
 import pandas as pd
+import geopandas as gpd
+import shapely
 from matplotlib import pyplot as plt
 import numpy as np
 from tqdm import tqdm
@@ -106,17 +108,85 @@ def vector_analyses(vector, sub_name='CADASTRE'):
     }
     return metrics_dict
 
+def get_object_level_metrics(y_true_shapes, y_pred_shapes, iou_threshold=0.5):
+    # according to https://github.com/fieldsoftheworld/ftw-baselines/blob/main/src/ftw/metrics.py#L5
+    """Get object level metrics for a single mask / prediction pair.
+
+        Args:
+            y_pred_shapes (np.ndarray): Predicted vectors.
+            iou_threshold (float, optional): IoU threshold for matching predictions to ground truths. Defaults to 0.5.
+
+        Returns
+            tuple (int, int, int): Number of true positives, false positives, and false negatives.
+        """
+    if iou_threshold < 0.5:
+        raise ValueError(
+            "iou_threshold must be greater than 0.5")  # If we go lower than 0.5 then it is possible for a single prediction to match with multiple ground truths and we have to do de-duplication
+
+    tps = 0
+    fns = 0
+    tp_is = set()  # keep track of which of the true shapes are true positives
+    tp_js = set()  # keep track of which of the predicted shapes are true positives
+    fn_is = set()  # keep track of which of the true shapes are false negatives
+    matched_js = set()
+    for i, y_true_shape in enumerate(y_true_shapes.geometry):
+        matching_j = None
+        for j, y_pred_shape in enumerate(y_pred_shapes.geometry):
+            if  shapely.is_valid(y_true_shape) and y_true_shape.intersects(y_pred_shape):
+                intersection = y_true_shape.intersection(y_pred_shape)
+                union = y_true_shape.union(y_pred_shape)
+                iou = intersection.area / union.area
+                if iou > iou_threshold:
+                    matching_j = j
+                    matched_js.add(j)
+                    tp_js.add(j)
+                    break
+        if matching_j is not None:
+            tp_is.add(i)
+            tps += 1
+        else:
+            fn_is.add(i)
+            fns += 1
+    fps = len(y_pred_shapes) - len(matched_js)
+    fp_js = set(range(len(y_pred_shapes))) - matched_js  # compute which of the predicted shapes are false positives
+    return (tps, fps, fns)
+
+
 def display_metrics(eopatch_folder):
     eopatch = EOPatch.load(eopatch_folder)
     metrics_dict = {}
     for sub_name in ['CADASTRE', 'PREDICTED']:
         metrics_dict.update(vector_analyses(eopatch.vector_timeless[sub_name],
                                             sub_name=sub_name))
+    tps, fps, fns = get_object_level_metrics(eopatch.vector_timeless['CADASTRE'],
+                                             eopatch.vector_timeless['PREDICTED'])
+    metrics_dict.update({
+        "tps_obj": tps,
+        "fps_obj": fps,
+        "fns_obj": fns,
+    })
     mask_gt = eopatch.mask_timeless['EXTENT_CADASTRE'].squeeze()
     mask_pred = eopatch.mask_timeless['EXTENT_PREDICTED'].squeeze()
     metrics_dict.update(comp_scores(mask_pred=mask_pred, mask_gt=mask_gt))
-    LOGGER.info(f"Metrics for patch {eopatch_folder} \n {metrics_dict}")
+    # LOGGER.info(f"Metrics for patch {eopatch_folder} \n {metrics_dict}")
     return metrics_dict
+
+def get_obj_metrics(metrics_df, flag_data):
+    # according to https://github.com/fieldsoftheworld/ftw-baselines/blob/main/src/ftw_cli/model.py#L140C5-L148C37
+    all_tps, all_fps, all_fns = metrics_df[~flag_data][["tps_obj", "fps_obj", "fns_obj"]].sum(axis=0)
+
+    if all_tps + all_fps > 0:
+        object_precision = all_tps / (all_tps + all_fps)
+    else:
+        object_precision = float('nan')
+
+    if all_tps + all_fns > 0:
+        object_recall = all_tps / (all_tps + all_fns)
+    else:
+        object_recall = float('nan')
+    metrics_df["object_recall"] = object_recall
+    metrics_df["object_precision"] = object_precision
+    return metrics_df
 
 
 def visualize_eopatch(eop):
@@ -175,7 +245,7 @@ def visualize_eopatch(eop):
 
 def main():
     # read GT files for region, and read Tile predicted agr
-    # convert back to pixels and compare by grid (partial loading) geoJson?
+    # convert back to pixels and compare by grid (partial loading)
     # https://cadastre.data.gouv.fr/data/etalab-cadastre/2024-07-01/geojson/departements/18/
     # contains in parcels buildings too (needs to filter non crop parcels)
     # Luxembourg 2024 (bad weather during March/April > 50% cloud cover)
@@ -185,15 +255,23 @@ def main():
     parser.add_argument("-p", "--pred_file_path", type=str, required=True)
     parser.add_argument("-e", "--eopatches_folder", type=str, required=True)
     parser.add_argument("-o", "--metrics_path", type=str, required=True)
-    parser.add_argument("--field_prc", type=float, required=False, default=0.05)
+    parser.add_argument("--field_num", type=int, required=False, default=10)
+    parser.add_argument("--min_field_num_tile", type=int, required=False, default=200)
 
     args = parser.parse_args()
 
     cadastre_tile_path = args.cadastre_tile_path
     pred_file_path = args.pred_file_path
     metrics_path = args.metrics_path
-    field_prc = args.field_prc
-    # percentage of fields in the patch for cadastre data to compute accuracy
+    field_num = args.field_num
+    # number of fields in the patch for cadastre data to compute accuracy
+
+    cadastre_data = gpd.read_file(cadastre_tile_path)
+    if len(cadastre_data) < args.min_field_num_tile:
+        LOGGER.info(f"Number of cadastre crop fields for the tile_grid = {len(cadastre_data)} < {args.min_field_num_tile}"
+                    f"\n. Terminate the metrics computation with the reason not enough Ground Truth data. ")
+        return
+
 
     eopatches_path = [f.path for f in os.scandir(
         args.eopatches_folder) if f.is_dir() and f.name.startswith('eopatch')]
@@ -203,7 +281,7 @@ def main():
         # creates gt and predicted masks from vectors (MOST important method)
         get_masks_pred_gt(eopatch_folder, cadastre_tile_path, pred_file_path)
 
-        if VISUALIZE:  # for all visualizations eopatch image (rgb) is needed
+        if VISUALIZE:  # for all visualizations eopatch image (rgb) bands are needed
             eopatch = EOPatch.load(eopatch_folder)
             visualize_eopatch(eopatch)
 
@@ -219,13 +297,14 @@ def main():
                 'CADASTRE_fields_prc', 'PREDICTED_fields_prc', 'accuracy_score',
                 'matthews_corrcoef', 'cohen_kappa_score', 'iou',
                 'TN (no field t, no field p)', 'FP (no field t, field p)',
-                'FN (field t, no field p)', 'TP (field t, field p)']
+                'FN (field t, no field p)', 'TP (field t, field p)',
+                ]
 
     # in case cadastre data is not available for the whole tile
-    flag_data = ((metrics_df['CADASTRE_fields_prc'] < field_prc) &
-                 (metrics_df['PREDICTED_fields_prc'] > field_prc))
+    flag_data = ((metrics_df['CADASTRE_num_pol'] < field_num) &
+                 (metrics_df['PREDICTED_num_pol'] >= field_num))
     LOGGER.info(f"EOpatches number with predicted fields "
-                f"but not available cadastre data for comparison \n {len(metrics_df[flag_data])}")
+                f"but not available cadastre data for comparison \n {len(metrics_df[flag_data])} from {len(metrics_df)}")
     # compute mean metrics only for the patches with available cadastre data
     mean = metrics_df[~flag_data][col_mean].mean(axis=0)
     metrics_df["no_CADASTRE_data"] = flag_data
@@ -233,6 +312,20 @@ def main():
 
     metrics_df["eopatch_folder"] = eopatches_path + ["mean"]
     metrics_df["count_no_CADASTRE_data"] = metrics_df["no_CADASTRE_data"].sum()
+
+    metrics_df = get_obj_metrics(metrics_df, flag_data)
+    # rounding
+    col_r_int = ['CADASTRE_num_pol', 'CADASTRE_max_areas/m^2',
+                'CADASTRE_min_areas/m^2', 'CADASTRE_avg_areas/m^2',
+                'PREDICTED_num_pol', 'PREDICTED_max_areas/m^2',
+                'PREDICTED_min_areas/m^2', 'PREDICTED_avg_areas/m^2']
+    col_r_float = ['CADASTRE_fields_prc', 'PREDICTED_fields_prc', 'accuracy_score',
+                'matthews_corrcoef', 'cohen_kappa_score', 'iou',
+                'TN (no field t, no field p)', 'FP (no field t, field p)',
+                'FN (field t, no field p)', 'TP (field t, field p)',
+                'object_recall', 'object_precision']
+    metrics_df[col_r_int] = metrics_df[col_r_int].apply(lambda x: np.round(x))
+    metrics_df[col_r_float] = metrics_df[col_r_float].apply(lambda x: np.round(x, 2))
     # create metrics file
     metrics_df.to_csv(metrics_path, index=False)
     LOGGER.info(f"Mean Metrics \n {metrics_df.iloc[-1]}")
