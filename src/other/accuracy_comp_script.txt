@@ -30,7 +30,8 @@ python "$code_path\tile_download_by_id.py" --tile_id $TileId --project_root $pro
 $url_cadastre = "https://data.geopf.fr/telechargement/download/RPG/$SubName/$SubName.7z"
 $out_file = "$project_root/CAP_$SubName.7z"
 $file_name = "PARCELLES_GRAPHIQUES"
-$archive_sub_path = "$SubName\\RPG\\1_DONNEES_LIVRAISON_2023\\$SubName/$file_name.shp"
+$year = $SubName[-10..-7]  -join ''
+$archive_sub_path = "$SubName\\RPG\\1_DONNEES_LIVRAISON_$year\\$SubName/$file_name.shp"
 
 if (!(Test-Path $out_file)) {
 Write-Output "Download cadastre data from $url_cadastre"
@@ -69,7 +70,7 @@ $eopatches_folder = "$project_root/$TileId/eopatches"
 # create base eopatches (folder with bbox for patches)
 if (!(Test-Path $eopatches_folder)) {
 Write-Output "Create basic patches for bbox definition in folder $eopatches_folder"
-python "$code_path\utils.py" --tile_path $tile_path --eopatches_folder $eopatches_folder
+python "$code_path\create_patches.py" --tile_path $tile_path --eopatches_folder $eopatches_folder
 }
 
 $metrics_path = "$project_root/$TileId/metrics_$expname.csv"
