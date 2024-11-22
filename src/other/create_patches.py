@@ -4,6 +4,7 @@ import os
 from datetime import timezone, datetime
 import xarray as xr
 import itertools as it
+import numpy as np
 from typing import Any, Iterable, cast
 
 # https://sentinelhub-py.readthedocs.io/en/latest/reference/sentinelhub.geometry.html
@@ -91,7 +92,8 @@ def split_save2eopatch(config: dict) -> None:
                             config["cld_percentage"]):
             num_split += 1
             create_eopatch_ds(patch, config["eopatches_folder"],
-                              image_id=f"x_{ind_x}_y_{ind_y}_{num_split}")
+                              image_id=f"x_{ind_x}_y_{ind_y}_{num_split}",
+                              create_empty=config["create_empty"])
         else:
             num_bad += 1
         if config["num_split"] != -1 and num_split == config["num_split"]:
@@ -102,10 +104,12 @@ def split_save2eopatch(config: dict) -> None:
 
 def create_eopatch_ds(ds: xr.Dataset,
                       output_eopatch_dir: str,
-                      image_id: str = '0') -> EOPatch:
+                      image_id: str = '0',
+                      create_empty=True) -> EOPatch:
     # Create a new EOPatch
     # TODO bbox of patch should intersect with GT for the tile
     #  (in case GT is not available for the whole tile)
+    # Creates empty EOPatch
     eopatch = EOPatch(
         bbox=BBox(ds.rio.bounds(), CRS(ds.rio.crs.to_string())),
         timestamp=[
@@ -117,6 +121,41 @@ def create_eopatch_ds(ds: xr.Dataset,
         ],
     )
 
+    def create_patch_bands(eopatch, ds):
+        # Initialize a dictionary to group bands and other data
+        data_dict = {
+            'BANDS': [],
+        }
+
+        for var in ds.data_vars:
+            if var != 'spatial_ref':
+                arr: xr.DataArray = ds[var]
+                data: np.ndarray = arr.values
+                # Eopatch data should have 4 dimensions: time, height, width, channels
+                if data.ndim == 2:
+                    # Add time and channel dimensions
+                    data = data[np.newaxis, ..., np.newaxis]
+                elif data.ndim == 3:
+                    # Add channel dimension
+                    data = data[..., np.newaxis]
+                else:
+                    continue
+
+                # Group bands into a single BANDS feature
+                if var.startswith('B'):
+                    data_dict['BANDS'].append(data)
+                else:
+                    eopatch.add_feature(FeatureType.DATA, var, data)
+
+        # Stack bands data along the last dimension (channels)
+        if data_dict['BANDS']:
+            bands_data = np.concatenate(data_dict['BANDS'], axis=-1)
+            eopatch.add_feature(FeatureType.DATA, 'BANDS', bands_data)
+        return eopatch
+
+    if not create_empty:
+        eopatch = create_patch_bands(eopatch, ds)
+
     # Create and save unique EOPatch
     eopatch_name = f'eopatch_{image_id}'
     eopatch_path = os.path.join(output_eopatch_dir, eopatch_name)
@@ -126,15 +165,12 @@ def create_eopatch_ds(ds: xr.Dataset,
     return eopatch
 
 
-def main_split_save2eopatch(split_config):
-    split_save2eopatch(split_config)
-
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--tile_path", type=str, required=True)
     parser.add_argument("-o", "--eopatches_folder", type=str, required=True)
+    parser.add_argument("--create_empty", default=True, type=bool, required=False)
 
     args = parser.parse_args()
 
@@ -152,5 +188,6 @@ if __name__ == "__main__":
 
     split_config['tile_path'] = args.tile_path
     split_config['eopatches_folder'] = args.eopatches_folder
-    main_split_save2eopatch(split_config)
+    split_config['create_empty'] = args.create_empty
+    split_save2eopatch(split_config)
 
