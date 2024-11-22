@@ -9,9 +9,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # multi volume
-    # with multivolumefile.open('example.7z', mode='rb') as target_archive:
-    #     with SevenZipFile(target_archive, 'r') as archive:
-    #         archive.extractall()
-    # python -m py7zr x monty.7z target-dir/
+    # with multivolumefile.open(args.input, mode='rb') as target_archive:
+    #     with SevenZipFile(path=args.output, 'r') as archive:
+    #         archive.extractall() # extracts into current directory
+    # python -m py7zr x monty.7z target-dir/ # doen't work with multi-volume
     with py7zr.SevenZipFile(args.input, mode='r') as z:
         z.extractall(path=args.output)
