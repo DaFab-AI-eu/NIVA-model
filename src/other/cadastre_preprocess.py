@@ -45,6 +45,8 @@ def main():
     # Columns: [ID_PARCEL, SURF_PARC, CODE_CULTU, CODE_GROUP, CULTURE_D1, CULTURE_D2, geometry]
     LOGGER.info(f"file {cadastre_path} len {len(data_gt)} and columns {data_gt.columns}")
     LOGGER.info(f"file {cadastre_path} crs {data_gt.crs}")
+    LOGGER.info(f"invalid geometries in dataset = {data_gt[~data_gt.geometry.is_valid]}")
+
     # no MultiPolygons
     LOGGER.info(f"other geometries except Polygon in dataset = {data_gt[data_gt.geometry.type != 'Polygon']}")
 
