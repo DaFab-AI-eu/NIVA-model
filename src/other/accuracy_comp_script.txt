@@ -1,24 +1,12 @@
-#$TileId = "S2B_31TEN_20230301_0_L2A"
-# $TileId = "S2B_31TDJ_20240921_0_L2A"
-# $TileId = "S2A_31TDK_20240916_0_L2A"
-
-# $expname = "training_20241028_195657"  # the best for far
-# $TileId = "S2B_31TEN_20230420_0_L2A" # "S2A_30UWU_20230302_0_L2A" #"S2B_31TEN_20230420_0_L2A"
-# # "training_20241028_195657"
-# # "training_20241029_040542"
-# # "training_20241029_162851"
-# # "fold_5"
-#
-# $SubName = "RPG_2-2__SHP_LAMB93_R27_2023-01-01"  # (région Bourgogne-Franche-Comté)
-
-Param ([string] $TileId = "S2B_31TEN_20230420_0_L2A",
+Param ([string] $TileId = "S2B_31UFT_20230301_0_L2A",
     [string]$expname = "training_20241028_195657",
-    [string]$SubName = "RPG_2-2__SHP_LAMB93_R27_2023-01-01")
+    [string]$source_path = "nl_ref.parquet",
+    [string]$url_cadastre = "https://data.source.coop/fiboa/nl-ref/nl_ref.parquet")
 
-# changes to your paths for 3 params below
-$project_root = "\data\accuracy"
-$code_path = "NIVA-model\src\other"
-$pred_file_path = "data\$expname\temporary\contours\$TileId\merged_simplified.gpkg"
+# input paths to be defined by user
+$project_root = "\accuracy"
+$code_path = "\NIVA-model\src\other"
+$pred_file_path = "\data\$expname\temporary\contours\$TileId\merged_simplified.gpkg"
 
 $tile_path = "$project_root/$TileId/tile/$TileId.nc"
 if (!(Test-Path $tile_path)) {
@@ -27,11 +15,10 @@ python "$code_path\tile_download_by_id.py" --tile_id $TileId --project_root $pro
 }
 
 # download cadastre data for accuracy estimations
-$url_cadastre = "https://data.geopf.fr/telechargement/download/RPG/$SubName/$SubName.7z"
-$out_file = "$project_root/CAP_$SubName.7z"
-$file_name = "PARCELLES_GRAPHIQUES"
-$year = $SubName[-10..-7]  -join ''
-$archive_sub_path = "$SubName\\RPG\\1_DONNEES_LIVRAISON_$year\\$SubName/$file_name.shp"
+$SubName = ($url_cadastre  -split '/')[-1]
+$filename = ($SubName  -split '.')[0]
+$ext = ($SubName  -split '.')[-1]
+$out_file = "$project_root/$SubName"
 
 if (!(Test-Path $out_file)) {
 Write-Output "Download cadastre data from $url_cadastre"
@@ -45,17 +32,18 @@ try {
     }
 }
 
-if (!(Test-Path "$project_root/$archive_sub_path")) {
+if (!(Test-Path "$project_root/$source_path")) {
 Write-Output "Extract .7z archive $out_file into $project_root"
 # Expand-Archive -LiteralPath $out_file -DestinationPath $project_root
 python "$code_path\z_extract.py" --input $out_file --output $project_root
 }
 
+
 $Grid = $TileId[4..8] -join ''
 $GridName = "_$Grid" + "_"
 $SimTolerance = 5
-$cadastre_tile_path = "$project_root/$TileId/tile/$SubName$GridName$SimTolerance.gpkg"
-$cadastre_path = "$project_root/$archive_sub_path"
+$cadastre_tile_path = "$project_root/$TileId/tile/$filename$GridName$SimTolerance.gpkg"
+$cadastre_path = "$project_root\$source_path"
 $tile_meta = "$project_root\$TileId\tile\metadata.gpkg"
 
 if (!(Test-Path $cadastre_tile_path)) {
@@ -73,7 +61,8 @@ Write-Output "Create basic patches for bbox definition in folder $eopatches_fold
 python "$code_path\create_patches.py" --tile_path $tile_path --eopatches_folder $eopatches_folder
 }
 
-$metrics_path = "$project_root/$TileId/metrics_$expname.csv"
+$final_file_name = $SubName + $expname
+$metrics_path = "$project_root/$TileId/metrics_$final_file_name.csv"
 
 if (!(Test-Path $metrics_path)) {
 Write-Output "Compute accuracy for the predicted $pred_file_path and cadastre $cadastre_tile_path"
