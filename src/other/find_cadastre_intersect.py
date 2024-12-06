@@ -1,4 +1,6 @@
 import argparse
+import json
+
 import geopandas as gpd
 
 if __name__ == "__main__":
@@ -18,12 +20,12 @@ if __name__ == "__main__":
         tile_meta = gpd.read_file(path_tile_meta)
         # for France the cadastre data is valid for previous year
         # https://geoservices.ign.fr/rpg#telechargementrpg2023
-        data_borders = data_borders[data_borders.year == tile_meta.datetime[0].year + 1]
+        data_borders = data_borders[data_borders.determination_year == tile_meta.datetime[0].year]
         # TODO add filtering of regions with low area of intersection
         data_borders = data_borders[data_borders.intersects(tile_meta.geometry.iloc[0], align=False)]
-        data_borders["sub_name"] = data_borders.url.str.split("/").str[-2]
+        data_borders = data_borders[["region", "url", "source_path"]]
         return data_borders
 
     data_borders = get_intersection_cadatre_urls(path_to_borders, path_tile_meta)
-    with open(output_path, "w") as file:
-        file.write("\n".join(data_borders.sub_name))
+    print(f"{data_borders}")
+    data_borders.to_json(output_path, orient='records')
