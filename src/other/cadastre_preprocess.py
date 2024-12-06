@@ -34,21 +34,33 @@ def main():
     cadastre_tile_path = args.cadastre_tile_path
     tile_meta_path = args.tile_meta
 
-    tile_meta = gpd.read_file(tile_meta_path)
-    # tile_bounds = tile_meta.total_bounds
+    tile_meta = gpd.read_file(tile_meta_path, columns=["geometry"])
     # read only the data for the given tile bounds
-    data_gt = gpd.read_file(cadastre_path, bbox=tile_meta.geometry)  # [386588 rows x 7 columns]
-    # LOGGER.info(f"saving to {CADASTRE_FINAL_TILE_PATH}")
-    # data_gt.to_file(cadastre_tile_path, index=False)
+    if cadastre_path.endswith(".parquet"):
+        # for fiboa data source
+        # year filtering?
+        data_gt = gpd.read_parquet(cadastre_path, columns=["geometry"])
+        # determination_datetime filtering
+        LOGGER.info(f"Whole file len {len(data_gt)}")
+        data_gt = data_gt.clip(tile_meta.to_crs(data_gt.crs))
+        LOGGER.info(f"File len after clipping to tile_grid {len(data_gt)}")
+    else:
+        # for France cadastre
+        data_gt = gpd.read_file(cadastre_path, bbox=tile_meta.geometry, columns=["geometry"])  # [386588 rows x 7 columns]
 
     """Simple data analysis below"""
     # Columns: [ID_PARCEL, SURF_PARC, CODE_CULTU, CODE_GROUP, CULTURE_D1, CULTURE_D2, geometry]
     LOGGER.info(f"file {cadastre_path} len {len(data_gt)} and columns {data_gt.columns}")
     LOGGER.info(f"file {cadastre_path} crs {data_gt.crs}")
     LOGGER.info(f"invalid geometries in dataset = {data_gt[~data_gt.geometry.is_valid]}")
-
+    data_gt = data_gt[data_gt.geometry.is_valid]
     # no MultiPolygons
-    LOGGER.info(f"other geometries except Polygon in dataset = {data_gt[data_gt.geometry.type != 'Polygon']}")
+    multi_pol = data_gt[data_gt.geometry.type != 'Polygon']
+    if len(multi_pol):
+        org_len = len(data_gt)
+        data_gt = data_gt.explode(ignore_index=True)
+        LOGGER.info(f"other geometries except Polygon in dataset = {multi_pol}. "
+                    f"Length before explode {org_len} and after {len(data_gt)}")
 
     coor_counts = data_gt.geometry.count_coordinates()
     rings_count = data_gt.geometry.count_interior_rings()
@@ -62,6 +74,7 @@ def main():
     coor_counts = data_gt_sim.geometry.count_coordinates()
     LOGGER.info(f"Number of coordinates for geometries after simplification min = {np.min(coor_counts)}, "
                 f"max = {np.max(coor_counts)}, mean = {np.mean(coor_counts)}")  # 4 352 9.4
+
     data_gt_sim.to_file(cadastre_tile_path)
 
 
