@@ -3,9 +3,6 @@ import os
 import sys
 import geopandas as gpd
 import numpy as np
-import requests
-from tqdm import tqdm
-import py7zr  # for extraction
 
 # Add the src directory to the path
 src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -16,9 +13,7 @@ from niva_utils.logger import get_logger  # noqa: E402
 LOGGER = get_logger(__name__)
 
 
-# The ground truth data from https://geoservices.ign.fr/rpg
-# RPG_2-2__SHP_LAMB93_R27_2023-01-01 (région Bourgogne-Franche-Comté)
-# "RPG_2-2__SHP_LAMB93_R53_2023-01-01"  # région Bretagne
+# The ground truth data for France from https://geoservices.ign.fr/rpg
 
 def main():
     parser = argparse.ArgumentParser()
@@ -49,7 +44,7 @@ def main():
         data_gt = gpd.read_file(cadastre_path, bbox=tile_meta.geometry, columns=["geometry"])  # [386588 rows x 7 columns]
 
     """Simple data analysis below"""
-    # Columns: [ID_PARCEL, SURF_PARC, CODE_CULTU, CODE_GROUP, CULTURE_D1, CULTURE_D2, geometry]
+    # Columns for France : [ID_PARCEL, SURF_PARC, CODE_CULTU, CODE_GROUP, CULTURE_D1, CULTURE_D2, geometry]
     LOGGER.info(f"file {cadastre_path} len {len(data_gt)} and columns {data_gt.columns}")
     LOGGER.info(f"file {cadastre_path} crs {data_gt.crs}")
     LOGGER.info(f"invalid geometries in dataset = {data_gt[~data_gt.geometry.is_valid]}")
@@ -59,7 +54,7 @@ def main():
     if len(multi_pol):
         org_len = len(data_gt)
         data_gt = data_gt.explode(ignore_index=True)
-        LOGGER.info(f"other geometries except Polygon in dataset = {multi_pol}. "
+        LOGGER.info(f"Other geometries except Polygon in dataset = {multi_pol.geometry.type.unique()}. "
                     f"Length before explode {org_len} and after {len(data_gt)}")
 
     coor_counts = data_gt.geometry.count_coordinates()
@@ -74,6 +69,8 @@ def main():
     coor_counts = data_gt_sim.geometry.count_coordinates()
     LOGGER.info(f"Number of coordinates for geometries after simplification min = {np.min(coor_counts)}, "
                 f"max = {np.max(coor_counts)}, mean = {np.mean(coor_counts)}")  # 4 352 9.4
+    LOGGER.info(f"Average area after simplification = {np.mean(data_gt_sim.geometry.area)}, "
+               f"Average area before simplification = {np.mean(data_gt.geometry.area)}")
 
     data_gt_sim.to_file(cadastre_tile_path)
 

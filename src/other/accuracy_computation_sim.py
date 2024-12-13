@@ -1,10 +1,8 @@
 import argparse
-import glob
 import os
 import sys
 import pandas as pd
 import geopandas as gpd
-import rasterio
 import shapely
 from matplotlib import pyplot as plt
 import numpy as np
@@ -13,10 +11,10 @@ from sklearn.metrics import matthews_corrcoef, cohen_kappa_score, confusion_matr
     ConfusionMatrixDisplay
 
 import fs.move  # required by eopatch.save
-from eolearn.core import FeatureType, EOPatch, OverwritePermission
+from eolearn.core import EOPatch
 
 
-from utils_plot import draw_true_color, draw_bbox, draw_vector_timeless, draw_mask, get_extent
+from utils_plot import draw_true_color, draw_bbox, draw_vector_timeless, draw_mask
 from transform_vector2mask import main_rastorize_vector
 
 # Add the src directory to the path
@@ -187,13 +185,11 @@ def display_metrics(eopatch_folder, obj_metrics=False):
     mask_gt = eopatch.mask_timeless['EXTENT_CADASTRE'].squeeze()
     mask_pred = eopatch.mask_timeless['EXTENT_PREDICTED'].squeeze()
     metrics_dict.update(comp_scores(mask_pred=mask_pred, mask_gt=mask_gt))
-    # LOGGER.info(f"Metrics for patch {eopatch_folder} \n {metrics_dict}")
     return metrics_dict
 
 def get_obj_metrics(metrics_df, flag_data):
-    # according to https://github.com/fieldsoftheworld/ftw-baselines/blob/main/src/ftw_cli/model.py#L140C5-L148C37
     all_tps, all_fps, all_fns = metrics_df[~flag_data][["tps_obj", "fps_obj", "fns_obj"]].sum(axis=0)
-
+    # TODO values close to zero -> eps
     if all_tps + all_fps > 0:
         object_precision = all_tps / (all_tps + all_fps)
     else:
@@ -213,15 +209,7 @@ def visualize_eopatch_obj(eop, masks):
     eop.vector_timeless['CADASTRE'].plot(ax=axis[0], color='green', alpha=0.5)
     eop.vector_timeless['PREDICTED'].plot(ax=axis[0], color='red', alpha=0.5)
 
-    def _show_single_ts(axis, msk, title, alpha=0.5, vmin=0, vmax=1, grid=True):
-        # from utils_plot
-        axis.imshow(msk, extent=get_extent(eop), vmin=vmin, vmax=vmax, alpha=alpha)
-        if grid:
-            axis.grid()
-        axis.set_title(title)
-
     for ind, (key, mask) in enumerate(masks.items()):
-        #_show_single_ts(axis[ind+1], mask, title=f"{key}")
         mask.plot(ax=axis[ind+1], color='green', alpha=0.5)
         axis[ind+1].grid()
         axis[ind+1].set_title(f"{key}")
@@ -234,26 +222,29 @@ def visualize_eopatch(eop):
     eop.vector_timeless['PREDICTED'].plot(ax=axis, color='red', alpha=0.5)
     plt.show()
 
+    flag_bands = 'BANDS' in eop.data
+    # holes in polygons are preserved
     for mask_name in ["EXTENT", "BOUNDARY"]:
-        time_idx = 0  # only one tile stemp
+        time_idx = 0  # only one tile stamp
         fig, ax = plt.subplots(ncols=4, figsize=(15, 20))
-        draw_true_color(ax[0], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
-                        grid=False)
+        if flag_bands:
+            draw_true_color(ax[0], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
+                            grid=False)
         draw_bbox(ax[0], eop)
         draw_vector_timeless(ax[0], eop, vector_name='CADASTRE', alpha=.3)
-
-        draw_true_color(ax[1], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
-                        grid=False)
+        if flag_bands:
+            draw_true_color(ax[1], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
+                            grid=False)
         draw_bbox(ax[1], eop)
         draw_mask(ax[1], eop, time_idx=None, feature_name=f'{mask_name}_CADASTRE', alpha=.3)
-
-        draw_true_color(ax[2], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
-                        grid=False)
+        if flag_bands:
+            draw_true_color(ax[2], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
+                            grid=False)
         draw_bbox(ax[2], eop)
         draw_mask(ax[2], eop, time_idx=None, feature_name=f'{mask_name}_PREDICTED', alpha=.3)
-
-        draw_true_color(ax[3], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
-                        grid=False)
+        if flag_bands:
+            draw_true_color(ax[3], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
+                            grid=False)
         ax[3].grid()
         plt.show()
 
@@ -313,7 +304,6 @@ def main():
                     f"\n. Terminate the metrics computation with the reason not enough Ground Truth data. ")
         return
 
-
     eopatches_path = [f.path for f in os.scandir(
         args.eopatches_folder) if f.is_dir() and f.name.startswith('eopatch')]
 
@@ -345,7 +335,8 @@ def main():
     flag_data = ((metrics_df['CADASTRE_num_pol'] < field_num) &
                  (metrics_df['PREDICTED_num_pol'] >= field_num))
     LOGGER.info(f"EOpatches number with predicted fields "
-                f"but not available cadastre data for comparison \n {len(metrics_df[flag_data])} from {len(metrics_df)}")
+                f"but not available cadastre data for comparison "
+                f"\n {len(metrics_df[flag_data])} from {len(metrics_df)}")
     # compute mean metrics only for the patches with available cadastre data
     mean = metrics_df[~flag_data][col_mean].mean(axis=0)
     metrics_df["no_CADASTRE_data"] = flag_data
