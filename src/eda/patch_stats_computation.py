@@ -10,6 +10,14 @@ import rioxarray as rxr
 from tqdm import tqdm
 
 
+config = {
+    "smallest_area": 25, # in pixels
+    "biggest_area": 2500, # in pixels
+    "smallest_solidity": 0.2,
+    "biggest_solidity": 0.85,
+    "smallest_eccentricity": 0.1,
+}
+
 def get_patch_stats(label_ds):
     # get position metadata
     meta = {}
@@ -33,12 +41,12 @@ def get_patch_stats(label_ds):
             "area",
             "perimeter",
             "solidity",  # Ratio of pixels in the region to pixels of the convex hull image. area/area_convex
-            "axis_major_length",
+            # "axis_major_length",
             # The length of the major axis of the ellipse that has the same normalized second central moments as the region.
-            "axis_minor_length",
+            # "axis_minor_length",
             # The length of the minor axis of the ellipse that has the same normalized second central moments as the region.
             "eccentricity",  # The value is in the interval [0, 1). When it is 0, the ellipse becomes a circle.
-            "area_filled",
+            # "area_filled", # the ai4boudaries fills holes
             "extent",
             # Ratio of pixels in the region to pixels in the total bounding box. Computed as area / (rows * cols). area/area_bbox
             "orientation",
@@ -46,13 +54,22 @@ def get_patch_stats(label_ds):
         ),
     )
     props = pd.DataFrame(props)
-    props["area/area_filled"] = props["area"] / props["area_filled"]
-    props["axis_minor_length/axis_major_length"] = props["axis_minor_length"] / props["axis_major_length"]
-    props.drop(columns=["area_filled", "label", "axis_minor_length", "axis_major_length"], inplace=True)
+    # props["area/area_filled"] = props["area"] / props["area_filled"]
+    # props["axis_minor_length/axis_major_length"] = props["axis_minor_length"] / props["axis_major_length"]
+    props.drop(columns=["label"], inplace=True)
+
+    # small, big parcels; complex fields count
+    meta["sm_area_cnt"] = len(props[props["area"] <= config["smallest_area"]])
+    meta["bg_area_cnt"] = len(props[props["area"] >= config["biggest_area"]])
+    meta["sm_solidity_cnt"] = len(props[props["solidity"] <= config["smallest_solidity"]])
+    meta["bg_solidity_cnt"] = len(props[props["solidity"] >= config["biggest_solidity"]])
+    meta["sm_eccentricity_cnt"] = len(props[props["eccentricity"] <= config["smallest_eccentricity"]])
 
     # general stats
     for col in ["min", "mean", "max"]:
-        meta.update(props.apply(col, axis=0).rename(lambda x: f"{x}_{col}").to_dict())
+        meta.update(props[["area", "perimeter",
+            "solidity", "eccentricity",
+                           "extent", "orientation"]].apply(col, axis=0).rename(lambda x: f"{x}_{col}").to_dict())
     return meta
 
 

@@ -51,7 +51,7 @@ def general_stats(data, sm_prc_fields=10, sm_num_fields=50):
     return data
 
 def main():
-    SENTINEL2_DIR = "C:\\Users\\alena.bakhoryna\\Documents\\code\\ai4boundaries_dataset"
+    SENTINEL2_DIR = "ai4boundaries_dataset"
     country = "NL"
     path_file = os.path.join(SENTINEL2_DIR, "stats", f"{country}.csv")
     path_out = os.path.join(SENTINEL2_DIR, "stats", f"{country}_stats.csv")
