@@ -1,6 +1,23 @@
+import os
+
+import matplotlib
 import numpy as np
 from matplotlib import pyplot as plt
+import rioxarray as rxr
+import xarray as xr
+from matplotlib.colors import ListedColormap
 
+
+def get_upack_patch(file_id,
+                    abs_path):
+    mask_path = os.path.join(abs_path, "masks", f"{file_id}_S2label_10m_256.tif")
+    image_path = os.path.join(abs_path, "images", f"{file_id}_S2_10m_256.nc")
+    label_ds = rxr.open_rasterio(mask_path)
+    image_ds = xr.open_dataset(image_path)
+    images = np.stack([image_ds["B4"], image_ds["B3"], image_ds["B2"]], axis=-1)
+    time_data = np.array(image_ds.variables['time'][:], dtype='datetime64[D]')
+    extent, boundary, distance, enum = np.array(label_ds[:4])
+    return images, extent, boundary, distance, time_data, enum
 
 def show_single_ts(axis, msk, ts=None, feature_name="extent", vmin=0, vmax=1, alpha=1., grid=False, cmap='viridis'):
     axis.imshow(msk, vmin=vmin, vmax=vmax, alpha=alpha,  cmap=cmap)
@@ -8,12 +25,14 @@ def show_single_ts(axis, msk, ts=None, feature_name="extent", vmin=0, vmax=1, al
         axis.grid()
     title = f'{feature_name} {ts}' if ts else f'{feature_name}'
     axis.set_title(title)
+    axis.set_axis_off()
 
 
-def plot_patch(file_id, images, extent, boundary, distance, time_data):
-    # TODO visualize enum, distance
+def plot_patch(file_id, images, extent, boundary, distance, enum, time_data):
+    # TODO visualize enum
+    # image shape 256*256 pixels
     factor = 3.5 / 10000
-    fig, ax = plt.subplots(ncols=len(images) + 1, nrows=3, figsize=(24, 15))
+    fig, ax = plt.subplots(ncols=len(images) + 1, nrows=3, figsize=(24, 10))
     alpha = 1.
     ind_row = 0
     show_single_ts(axis=ax[ind_row][0], msk=distance, ts=None, feature_name=f"distance {file_id}",
@@ -25,8 +44,19 @@ def plot_patch(file_id, images, extent, boundary, distance, time_data):
 
     alpha = 0.8
     ind_row = 1
-    show_single_ts(axis=ax[ind_row][0], msk=extent, ts=None, feature_name=f"extent {file_id}",
-                   vmin=0, vmax=1, alpha=1., grid=False, cmap='gray')
+    # show_single_ts(axis=ax[ind_row][0], msk=extent, ts=None, feature_name=f"extent {file_id}",
+    #                vmin=0, vmax=1, alpha=1., grid=False, cmap='gray')
+
+    num_fields = enum.max() + 1
+    viridis = matplotlib.colormaps['viridis'].resampled(num_fields)
+    # newcolors = viridis(np.random.rand(num_fields))
+    # newcolors[0] = np.array([0., 0., 0., 1.])  # backgroud color / withought fields
+    newcolors = np.random.rand(num_fields, 3)
+    newcolors[0] = np.array([0., 0., 0.])  # np.array([0., 0., 0., 1.]) # backgroud color / withought fields
+    cmap = ListedColormap(newcolors, name='enum_cmap', N=num_fields)
+    show_single_ts(axis=ax[ind_row][0], msk=enum, ts=None, feature_name=f"extent/enum {file_id}", vmin=0, vmax=num_fields, alpha=1., grid=False,
+                   cmap=cmap)
+
     for ind in range(len(images)):
         mask = np.clip(images[ind] * factor, 0, 1)
         show_single_ts(axis=ax[ind_row][ind + 1], msk=mask, ts=time_data[ind], feature_name=f"{file_id}",
