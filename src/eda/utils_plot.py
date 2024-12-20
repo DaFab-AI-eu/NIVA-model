@@ -1,6 +1,6 @@
 import os
 
-import matplotlib
+from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
 from matplotlib import pyplot as plt
 import rioxarray as rxr
@@ -17,7 +17,10 @@ def get_upack_patch(file_id,
     images = np.stack([image_ds["B4"], image_ds["B3"], image_ds["B2"]], axis=-1)
     time_data = np.array(image_ds.variables['time'][:], dtype='datetime64[D]')
     extent, boundary, distance, enum = np.array(label_ds[:4])
-    return images, extent, boundary, distance, time_data, enum
+    enum = enum.astype(int)
+    enum[enum < 0] = 1 # background is -1000
+    enum -= 1 # enumeration starts from 2 from fields
+    return images, extent, boundary, distance, enum, time_data
 
 def show_single_ts(axis, msk, ts=None, feature_name="extent", vmin=0, vmax=1, alpha=1., grid=False, cmap='viridis'):
     axis.imshow(msk, vmin=vmin, vmax=vmax, alpha=alpha,  cmap=cmap)
@@ -29,7 +32,6 @@ def show_single_ts(axis, msk, ts=None, feature_name="extent", vmin=0, vmax=1, al
 
 
 def plot_patch(file_id, images, extent, boundary, distance, enum, time_data):
-    # TODO visualize enum
     # image shape 256*256 pixels
     factor = 3.5 / 10000
     fig, ax = plt.subplots(ncols=len(images) + 1, nrows=3, figsize=(24, 10))
@@ -44,16 +46,11 @@ def plot_patch(file_id, images, extent, boundary, distance, enum, time_data):
 
     alpha = 0.8
     ind_row = 1
-    # show_single_ts(axis=ax[ind_row][0], msk=extent, ts=None, feature_name=f"extent {file_id}",
-    #                vmin=0, vmax=1, alpha=1., grid=False, cmap='gray')
 
     num_fields = enum.max() + 1
-    viridis = matplotlib.colormaps['viridis'].resampled(num_fields)
-    # newcolors = viridis(np.random.rand(num_fields))
-    # newcolors[0] = np.array([0., 0., 0., 1.])  # backgroud color / withought fields
-    newcolors = np.random.rand(num_fields, 3)
-    newcolors[0] = np.array([0., 0., 0.])  # np.array([0., 0., 0., 1.]) # backgroud color / withought fields
-    cmap = ListedColormap(newcolors, name='enum_cmap', N=num_fields)
+    colors = np.random.rand(num_fields, 3)
+    colors[0] = np.array([0., 0., 0.]) # background color / without fields
+    cmap = ListedColormap(colors, name='enum_cmap', N=num_fields)
     show_single_ts(axis=ax[ind_row][0], msk=enum, ts=None, feature_name=f"extent/enum {file_id}", vmin=0, vmax=num_fields, alpha=1., grid=False,
                    cmap=cmap)
 
@@ -78,3 +75,16 @@ def plot_patch(file_id, images, extent, boundary, distance, enum, time_data):
         show_single_ts(axis=ax[ind_row][ind + 1], msk=boundary, ts=None,
                        feature_name=f"boundary {file_id} {time_data[ind]}",
                        vmin=0, vmax=1, alpha=1 - alpha, grid=False, cmap='gray')
+    return fig
+
+
+def save2pdf(path_to_pdf, abs_path, file_ids):
+    # visualize patches
+    with PdfPages(path_to_pdf) as pdf:
+        for file_id in enumerate(file_ids):
+            images, extent, boundary, distance, enum, time_data = get_upack_patch(file_id,
+                    abs_path)
+            fig = plot_patch(file_id, images, extent, boundary, distance, enum, time_data)
+            plt.show()
+            pdf.savefig(fig)
+            plt.close()
