@@ -81,7 +81,7 @@ def plot_patch(file_id, images, extent, boundary, distance, enum, time_data):
 def save2pdf(path_to_pdf, abs_path, file_ids):
     # visualize patches
     with PdfPages(path_to_pdf) as pdf:
-        for file_id in enumerate(file_ids):
+        for file_id in file_ids:
             images, extent, boundary, distance, enum, time_data = get_upack_patch(file_id,
                     abs_path)
             fig = plot_patch(file_id, images, extent, boundary, distance, enum, time_data)
