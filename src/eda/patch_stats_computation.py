@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 
@@ -46,7 +47,7 @@ def get_patch_stats(label_ds):
             # "axis_minor_length",
             # The length of the minor axis of the ellipse that has the same normalized second central moments as the region.
             "eccentricity",  # The value is in the interval [0, 1). When it is 0, the ellipse becomes a circle.
-            # "area_filled", # the ai4boudaries fills holes
+            # "area_filled", # the ai4boudaries not fills holes (the methods cannot determine holes and exterior as one entity)
             "extent",
             # Ratio of pixels in the region to pixels in the total bounding box. Computed as area / (rows * cols). area/area_bbox
             "orientation",
@@ -76,7 +77,13 @@ def get_patch_stats(label_ds):
 def main():
     # input params
     SENTINEL2_DIR = "ai4boundaries_dataset"
-    country = "NL"
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--country", type=str, required=True,
+                        default="NL")
+    args = parser.parse_args()
+
+    country = args.country
 
     final_path = os.path.join(SENTINEL2_DIR, "stats")
     SENTINEL2_DIR = os.path.join(SENTINEL2_DIR, country)
