@@ -287,7 +287,7 @@ def main():
     parser.add_argument("-o", "--metrics_path", type=str, required=True)
     parser.add_argument("--field_num", type=int, required=False, default=10)
     parser.add_argument("--min_field_num_tile", type=int, required=False, default=200)
-    parser.add_argument("--obj_metrics", type=bool, required=False, default=True)
+    parser.add_argument("--obj_metrics", type=bool, required=False, default=False)
 
     args = parser.parse_args()
 
