@@ -26,9 +26,10 @@
 
 $expname = "workflow_v1.0.1" # "training_20241028_195657"
 
-$project_root = "niva_check\data\accuracy\$expname"
-$code_path = "\NIVA-model\src\other"
-$path_to_borders = "\NIVA-model\data\\cadastre_metadata_v1.0.0.gpkg"
+$base_abs = ""
+$project_root = "$base_abs\niva_check\data\accuracy\$expname"
+$code_path = "$base_abs\NIVA-model\src\other"
+$path_to_borders = "$base_abs\NIVA-model\data\\cadastre_metadata_v1.0.0.gpkg"
 
 # S2A_32UPB_20240430_0_L2A (no in demo)
 
@@ -36,6 +37,9 @@ $path_to_borders = "\NIVA-model\data\\cadastre_metadata_v1.0.0.gpkg"
 # S2A_32UQB_20240430_0_L2A
 # S2A_33UUU_20240427_0_L2A
 # S2B_32UPE_20240309_0_L2A
+
+# https://gdal.org/en/stable/programs/gdal_translate.html
+# -scale 0 3000 0 255 -exponent 1
 
 $remove_outliers = 0
 $combine_regions = $true
