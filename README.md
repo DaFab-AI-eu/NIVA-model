@@ -47,20 +47,6 @@ The [geos library](https://github.com/libgeos/geos) is required by python module
 
 * to install from source, see <https://github.com/libgeos/geos/blob/main/INSTALL.md>
 
-#### PostgreSQL (INFERENCE ONLY)
-
-libpq is the C application programmer's interface to PostgreSQL. It is required to install
-the `psycopg2` package
-
-* Install with apt
-
-  ```sh
-  sudo apt update
-  sudo apt-get install libpq-dev
-  ```
-
-* to install from source, see <https://www.postgresql.org/docs/current/installation.html>
-
 #### Docker
 
 The training could be done from docker container that already includes NVIDIA GPU 
@@ -389,33 +375,29 @@ The output of the commands have the following structure:
 ```
 The final GeoJson file with predicted boundaries are in `[TILE_ID]/contours/v_[VERSION]/[TILE_ID].geojson`.
 
-### Accuracy computation
+### Accuracy computation on the tile
 
-For predicted vectorized field boundaries accuracy metrics are computed with the help of following steps.
+For predicted vectorized field boundaries compared to Ground Truth (cadastre) accuracy metrics are computed with the help of following steps.
 
-1. Finding Ground Truth data to compare predicted to. 
+1. Inputs (tile metadata, field boundaries generated on the tile).
+
+2. Finding Ground Truth data to compare predicted to. 
 
 For France there is https://geoservices.ign.fr/rpg where crop field boundary data is 
-stored (vector format). 
+stored (vector format). Another source https://www.stacindex.org/catalogs/fiboa#/ (geoparquet)
 
-Chose the region the tile is covering.
+Chose the region the tile is covering. Add cadastre metadata (region, bounding box of the region, 
+valid year, link to data, file name, ...) 
+to file `data/cadastre_metadata_v1.0.0.gpkg`.
 
-2. Download the cadastre data.
-
-The command:
-``` sh
-  python src/other/download_cadastre.py
-```
-The results of the command is saved vector data for the tile region.
-
-3. Convert vector data to raster and compute metrics (accuracy, Intersection over Union, ...).
+3. Compute validation metrics for the tile
 
 The command:
 ``` sh
-  python src/other/accuracy_computation.py
+  ./srcipts/metrics/experiments_accuracy_computation_v_0.py
 ```
-The output is vectorized field boundaries (Ground Truth - cadastre, Predicted - inference pipeline generated) and
-`metrics_v[VERSION].csv` file with computed metrics for every patch (sub-tile) and mean of them.
+The output is processed Ground Truth (cadastre) field boundaries and
+`metrics_*.csv` file with computed metrics for every patch (sub-tile) and mean of them.
 
 
 ## Implementation details
@@ -430,3 +412,9 @@ Preprocessing workflow diagram is available under `/visuals` :
 
 Inference diagram is vailable under `/visuals` :
 ![Inference Workflow](visuals/inference_workflow.png)
+
+### Accuracy / metrics computation
+
+Metrics computation diagram is  available under 
+`/visuals` :
+![metrics_computation_workflow](visuals/metrics_computation_workflow.png)
