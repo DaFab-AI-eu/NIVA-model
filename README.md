@@ -381,14 +381,14 @@ For predicted vectorized field boundaries compared to Ground Truth (cadastre) ac
 
 1. Inputs (tile metadata, field boundaries generated on the tile).
 
-2. Finding Ground Truth data to compare predicted to. 
+2. Find Ground Truth data to compare predicted to. 
 
 For France there is https://geoservices.ign.fr/rpg where crop field boundary data is 
 stored (vector format). Another source https://www.stacindex.org/catalogs/fiboa#/ (geoparquet)
 
 Chose the region the tile is covering. Add cadastre metadata (region, bounding box of the region, 
 valid year, link to data, file name, ...) 
-to file `data/cadastre_metadata_v1.0.0.gpkg`.
+to file `data/cadastre_metadata_v1.0.0.gpkg` if there isn't already existing metadata for the region and valid year.
 
 3. Compute validation metrics for the tile
 
