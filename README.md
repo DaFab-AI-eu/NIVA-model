@@ -392,9 +392,9 @@ to file `data/cadastre_metadata_v1.0.0.gpkg` if there isn't already existing met
 
 3. Compute validation metrics for the tile
 
-The command:
+The command (PowerShell):
 ``` sh
-  ./srcipts/metrics/experiments_accuracy_computation_v_0.py
+  ./srcipts/metrics/experiments_accuracy_computation_v_0.ps1
 ```
 The output is processed Ground Truth (cadastre) field boundaries and
 `metrics_*.csv` file with computed metrics for every patch (sub-tile) and mean of them.
