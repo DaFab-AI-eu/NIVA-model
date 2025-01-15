@@ -35,7 +35,7 @@ def visualization_parcels(data, label, num_plt=5, beta=0.3, alpha=0.3,
 
 
 abs_path = "/home/niva/ai4boundaries_data/models/training_20241030_031952" # change to your own
-# training_20241029_162851 training_20241029_122232 training_20241029_093604
+# training_20241030_031952 training_20241029_162851 training_20241029_122232 training_20241029_093604
 # training_20241028_141719 training_20241028_195657 training_20241029_040542
 chkpt_folder = os.path.join(abs_path, "checkpoints")  # change to your own
 model_cfg_path = os.path.join(abs_path, "model_cfg.json")  # change to your own
