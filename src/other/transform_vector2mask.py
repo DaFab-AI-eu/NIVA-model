@@ -97,7 +97,7 @@ def main_rastorize_vector(config):
 def extent2boundary(eopatch, extent_feature, boundary_feature, structure=disk(2)):
     # https://github.com/sentinel-hub/field-delineation/blob/main/fd/gsaa_to_eopatch.py#L87
     extent_mask = eopatch.mask_timeless[extent_feature].squeeze(axis=-1)
-    boundary_mask = binary_dilation(extent_mask, selem=structure) - extent_mask
+    boundary_mask = binary_dilation(extent_mask, footprint=structure) - extent_mask # selem
     eopatch.add_feature(FeatureType.MASK_TIMELESS, boundary_feature,
                         boundary_mask[..., np.newaxis])
     return eopatch
