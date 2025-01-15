@@ -43,17 +43,24 @@ $SimTolerance = 5
 
 New-Item -ItemType Directory -Path (Split-Path -Parent $project_root) -ErrorAction Ignore | Out-Null
 
-$("S2A_32UQB_20240430_0_L2A") | ForEach-Object {
+$("S2A_33UUU_20240427_0_L2A", "S2B_32UPE_20240309_0_L2A") | ForEach-Object {
     $TileId = ${_}
     $out_file = "$project_root/intersection_" + "$TileId.json"
 
     # download tile meta data and predicted field boundaries for the tile
-    $pred_file_path = "$project_root\\$TileId\\predicted\\merged.geojson"
+    $pred_file_path_ = "$project_root\\$TileId\\predicted\\field-boundaries-$TileId.geojson"
     $path_tile_meta = "$project_root\\$TileId\\meta\\$TileId.json"
+    # path to convert GeoJson to geopackage for more convenient spatial op
+    $pred_file_path = "$project_root\\$TileId\\predicted\\field-boundaries-$TileId.gpkg"
 
+    if (!(Test-Path $pred_file_path)) {
+    # save to gpkg format
+    # python -c "import geopandas as gpd; data = gpd.read_file($pred_file_path_); data.to_file($pred_file_path)"
+    python "$code_path/convert2gpkg.py" -i $pred_file_path_ -o $pred_file_path
+    }
+    # TODO automatically download predicted field boundaries + tile metadata
     New-Item -ItemType Directory -Path (Split-Path -Parent $path_tile_meta) -ErrorAction Ignore | Out-Null
     New-Item -ItemType Directory -Path (Split-Path -Parent $pred_file_path) -ErrorAction Ignore | Out-Null
-
 
     if (!(Test-Path $out_file)) {
     Write-Output "Find intersection between tile and cadastre data $out_file"
@@ -78,18 +85,22 @@ $("S2A_32UQB_20240430_0_L2A") | ForEach-Object {
             # compute accuracy metrics for the regional cadastre data
             $final_file_name = "region_" + $filename + "_expname_" + $expname + "_r_" + "$remove_outliers"
             $metrics_path = "$project_root/$TileId/metrics_$final_file_name.csv"
-            ./accuracy_comp_only.ps1 $TileId $pred_file_path $project_root $code_path $cadastre_tile_path $metrics_path
+            ./accuracy_comp_only.ps1 $TileId $pred_file_path $project_root $code_path $cadastre_tile_path $metrics_path $path_tile_meta
         }
     }
 
     if ($combine_regions) {
         $cadastre_folder = "$project_root/$TileId/tile/cadastre_" + "$remove_outliers"
-        $cadastre_tile_path = "$project_root/$TileId/tile/cadastre_combined.gpkg"
-        python "$code_path/combine_cadastre.py" --input_folder $cadastre_folder --output $cadastre_tile_path
+        $cadastre_tile_path = "$project_root/$TileId/tile/cadastre_combined_$remove_outliers.gpkg"
+
+        if (!(Test-Path $cadastre_tile_path)) {
+            Write-Output "Combine cadastre data for different regions $cadastre_tile_path"
+            python "$code_path/combine_cadastre.py" --input_folder $cadastre_folder --output $cadastre_tile_path
+        }
         # compute accuracy metrics for the combined cadastre of regions data
         $filename = "combined"
         $final_file_name = "region_" + $filename + "_expname_" + $expname + "_r_" + "$remove_outliers"
         $metrics_path = "$project_root/$TileId/metrics_$final_file_name.csv"
-        ./accuracy_comp_only.ps1 $TileId $pred_file_path $project_root $code_path $cadastre_tile_path $metrics_path
+        ./accuracy_comp_only.ps1 $TileId $pred_file_path $project_root $code_path $cadastre_tile_path $metrics_path $path_tile_meta
     }
 }
