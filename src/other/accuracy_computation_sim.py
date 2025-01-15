@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import sys
 import pandas as pd
@@ -66,13 +67,13 @@ def comp_scores(mask_gt, mask_pred):
     func_perc = lambda arr: arr[arr == 1].sum() / len(arr)
     metrics_dict["CADASTRE_fields_prc"] = func_perc(mask_gt)
     metrics_dict["PREDICTED_fields_prc"] = func_perc(mask_pred)
-    metrics_dict["accuracy_score"] = accuracy_score(mask_gt, mask_pred)
+    metrics_dict["Accuracy_pixel"] = accuracy_score(mask_gt, mask_pred)
     # TODO when there is no field pred and gt matthews_corrcoef should be 1
-    metrics_dict["matthews_corrcoef"] = matthews_corrcoef(mask_gt, mask_pred)
+    metrics_dict["MCC_pixel"] = matthews_corrcoef(mask_gt, mask_pred)
     # TODO when there is no field pred and gt cohen_kappa_score should be 1
-    metrics_dict["cohen_kappa_score"] = cohen_kappa_score(mask_gt, mask_pred)
+    metrics_dict["Kappa_pixel"] = cohen_kappa_score(mask_gt, mask_pred)
     cm, iou = compute_iou(y_pred=mask_pred, y_true=mask_gt, cm_display=VISUALIZE)
-    metrics_dict["iou"] = iou
+    metrics_dict["IoU_pixel"] = iou
     cm_normalized = cm / cm.sum()
     score_names = ["TN (no field t, no field p)", "FP (no field t, field p)",
                    "FN (field t, no field p)", "TP (field t, field p)"]
@@ -105,6 +106,42 @@ def vector_analyses(vector, sub_name='CADASTRE'):
         f"{sub_name}_min_areas/m^2": areas.min(),
         f"{sub_name}_avg_areas/m^2": areas.mean(),
     }
+    return metrics_dict
+
+def total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path):
+    metrics_dict = {}
+    total_tile_area = (10980 * 10) ** 2 # in meters not considering missing values
+
+    general_meta_col = ['eo:cloud_cover',
+                        's2:nodata_pixel_percentage',
+                        's2:vegetation_percentage',
+                        's2:not_vegetated_percentage',
+                        's2:water_percentage',
+                        's2:high_proba_clouds_percentage',
+                        's2:medium_proba_clouds_percentage',
+                        's2:thin_cirrus_percentage',
+                        's2:cloud_shadow_percentage',]
+
+    with open(tile_meta_path, "r") as fp:
+        boundaries = gpd.GeoDataFrame.from_features([json.load(fp)], crs="epsg:4326")
+    epsg = boundaries["proj:epsg"][0]
+    boundaries = boundaries.to_crs(epsg=epsg)
+    total_tile_area_cur = boundaries.area.sum()
+
+    LOGGER.info(f"Data {tile_meta_path} crs {boundaries.crs} {boundaries.crs.axis_info[0].unit_name}")
+
+    for feature_name, vector_file_path in zip(["CADASTRE", "PREDICTED"],
+                                              [cadastre_tile_path,
+                                               pred_file_path]):
+        data = gpd.read_file(vector_file_path)
+        data = data.to_crs(epsg=epsg)
+        LOGGER.info(f"Data {vector_file_path} crs {data.crs} {data.crs.axis_info[0].unit_name}")
+        metrics_dict.update(vector_analyses(data, sub_name=f'Total_{feature_name}'))
+        metrics_dict[f'Total_{feature_name}_area'] = data.area.sum()
+        metrics_dict[f'Total_{feature_name}_prc'] = 100 * metrics_dict[f'Total_{feature_name}_area'] / total_tile_area
+        metrics_dict[f'Total_{feature_name}_prc_cur'] = 100 * metrics_dict[f'Total_{feature_name}_area'] / total_tile_area_cur
+    # add general metadata of the tile
+    metrics_dict.update(boundaries[general_meta_col].iloc[0].to_dict())
     return metrics_dict
 
 def get_object_level_metrics(y_true_shapes, y_pred_shapes, iou_threshold=0.5):
@@ -199,8 +236,8 @@ def get_obj_metrics(metrics_df, flag_data):
         object_recall = all_tps / (all_tps + all_fns)
     else:
         object_recall = float('nan')
-    metrics_df["object_recall"] = object_recall
-    metrics_df["object_precision"] = object_precision
+    metrics_df["Recall_object"] = object_recall
+    metrics_df["Precision_object"] = object_precision
     return metrics_df
 
 
@@ -285,9 +322,10 @@ def main():
     parser.add_argument("-p", "--pred_file_path", type=str, required=True)
     parser.add_argument("-e", "--eopatches_folder", type=str, required=True)
     parser.add_argument("-o", "--metrics_path", type=str, required=True)
+    parser.add_argument("-m", "--tile_meta_path", type=str, required=True)
     parser.add_argument("--field_num", type=int, required=False, default=10)
     parser.add_argument("--min_field_num_tile", type=int, required=False, default=200)
-    parser.add_argument("--obj_metrics", type=bool, required=False, default=False)
+    parser.add_argument("--obj_metrics", type=bool, required=False, default=True)
 
     args = parser.parse_args()
 
@@ -296,6 +334,7 @@ def main():
     metrics_path = args.metrics_path
     field_num = args.field_num
     obj_metrics = args.obj_metrics
+    tile_meta_path = args.tile_meta_path
     # number of fields in the patch for cadastre data to compute accuracy
 
     cadastre_data = gpd.read_file(cadastre_tile_path)
@@ -306,6 +345,9 @@ def main():
 
     eopatches_path = [f.path for f in os.scandir(
         args.eopatches_folder) if f.is_dir() and f.name.startswith('eopatch')]
+
+    total_metrics_dict = total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path)
+    LOGGER.info(total_metrics_dict)
 
     score_list = []
     for eopatch_folder in tqdm(eopatches_path):
@@ -325,8 +367,8 @@ def main():
                 'CADASTRE_min_areas/m^2', 'CADASTRE_avg_areas/m^2',
                 'PREDICTED_num_pol', 'PREDICTED_max_areas/m^2',
                 'PREDICTED_min_areas/m^2', 'PREDICTED_avg_areas/m^2',
-                'CADASTRE_fields_prc', 'PREDICTED_fields_prc', 'accuracy_score',
-                'matthews_corrcoef', 'cohen_kappa_score', 'iou',
+                'CADASTRE_fields_prc', 'PREDICTED_fields_prc', 'Accuracy_pixel',
+                'MCC_pixel', 'Kappa_pixel', 'IoU_pixel',
                 'TN (no field t, no field p)', 'FP (no field t, field p)',
                 'FN (field t, no field p)', 'TP (field t, field p)',
                 ]
@@ -345,19 +387,50 @@ def main():
     metrics_df["eopatch_folder"] = eopatches_path + ["mean"]
     metrics_df["count_no_CADASTRE_data"] = metrics_df["no_CADASTRE_data"].sum()
 
+    # additional metrics
+    eps = 1e-6
+    metrics_df["Precision_pixel"] = metrics_df['TP (field t, field p)'] / (
+                metrics_df['TP (field t, field p)'] + metrics_df['FP (no field t, field p)'] + eps)
+    metrics_df["Recall_pixel"] = metrics_df['TP (field t, field p)'] / (
+                metrics_df['TP (field t, field p)'] + metrics_df['FN (field t, no field p)'] + eps)
+    metrics_df["F1_pixel"] = (2 * metrics_df["Precision_pixel"] * metrics_df["Recall_pixel"]) / (metrics_df["Precision_pixel"] + metrics_df["Recall_pixel"] + eps)
+
+    # general metrics
+    for key, val in total_metrics_dict.items():
+        metrics_df[key] = val
+
     if obj_metrics:
         metrics_df = get_obj_metrics(metrics_df, flag_data)
     # rounding
     col_r_int = ['CADASTRE_num_pol', 'CADASTRE_max_areas/m^2',
                 'CADASTRE_min_areas/m^2', 'CADASTRE_avg_areas/m^2',
                 'PREDICTED_num_pol', 'PREDICTED_max_areas/m^2',
-                'PREDICTED_min_areas/m^2', 'PREDICTED_avg_areas/m^2']
-    col_r_float = ['CADASTRE_fields_prc', 'PREDICTED_fields_prc', 'accuracy_score',
-                'matthews_corrcoef', 'cohen_kappa_score', 'iou',
-                'TN (no field t, no field p)', 'FP (no field t, field p)',
-                'FN (field t, no field p)', 'TP (field t, field p)',]
+                'PREDICTED_min_areas/m^2', 'PREDICTED_avg_areas/m^2',
+
+                 'Total_CADASTRE_num_pol', 'Total_CADASTRE_max_areas/m^2',
+                 'Total_CADASTRE_min_areas/m^2',
+                 'Total_CADASTRE_avg_areas/m^2', 'Total_CADASTRE_prc_cur',
+                 'Total_PREDICTED_num_pol',
+                 'Total_PREDICTED_max_areas/m^2', 'Total_PREDICTED_min_areas/m^2',
+                 'Total_PREDICTED_avg_areas/m^2', 'Total_PREDICTED_area',]
+
+    col_r_float = ['CADASTRE_fields_prc', 'PREDICTED_fields_prc', 'Accuracy_pixel',
+                    'MCC_pixel', 'Kappa_pixel', 'IoU_pixel',
+                    'TN (no field t, no field p)', 'FP (no field t, field p)',
+                    'FN (field t, no field p)', 'TP (field t, field p)',
+                    'Precision_pixel', 'Recall_pixel', 'F1_pixel',
+
+                    'Total_CADASTRE_area', 'Total_CADASTRE_prc',
+                    'Total_PREDICTED_prc', 'Total_PREDICTED_prc_cur',
+                    'eo:cloud_cover', 's2:nodata_pixel_percentage', 's2:vegetation_percentage',
+                    's2:not_vegetated_percentage', 's2:water_percentage',
+                    's2:high_proba_clouds_percentage',
+                    's2:medium_proba_clouds_percentage', 's2:thin_cirrus_percentage',
+                    's2:cloud_shadow_percentage']
+
+
     if obj_metrics:
-        col_r_float.extend(['object_recall', 'object_precision'])
+        col_r_float.extend(['Recall_object', 'Precision_object'])
 
     metrics_df[col_r_int] = metrics_df[col_r_int].apply(lambda x: np.round(x))
     metrics_df[col_r_float] = metrics_df[col_r_float].apply(lambda x: np.round(x, 2))
