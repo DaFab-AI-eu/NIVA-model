@@ -107,6 +107,23 @@ def over_under_segmentation_metrics(gt_polygon, pred_polygons):
     return np.clip(over_segm, 0, 1), np.clip(under_segm, 0, 1)
 
 
+def categorize_area(area_ha, list_areas=[
+    0, 1e-3, 1e-2, 0.5, 1.5, 2.5, 5, 12, 25, 50, 100, 1000
+]):
+    # compute number of parcels less than 0.5ha, 0.5-1, 1-2, 2-5, 5-10, 10-50, 50-100, 100-1000
+    if area_ha >= list_areas[-1]:
+        return f"{list_areas[-1]}-"
+    low_ind, high_ind = 0, len(list_areas) - 1
+    while low_ind + 1 < high_ind:
+        middle_ind = (low_ind + high_ind) // 2
+        if area_ha >= list_areas[middle_ind]:
+            low_ind = middle_ind
+        else:
+            high_ind = middle_ind
+    # LOGGER.info(f"------------------- {low_ind} {high_ind} {area_ha}")
+    return f"{list_areas[low_ind]}-{list_areas[high_ind]}"
+
+
 
 def total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path):
     metrics_dict = {}
@@ -126,13 +143,20 @@ def total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path):
         boundaries = gpd.GeoDataFrame.from_features([json.load(fp)], crs="epsg:4326")
     epsg = boundaries["proj:epsg"][0]
     boundaries = boundaries.to_crs(epsg=epsg)
-    total_tile_area_cur = boundaries.area.sum()
+    total_tile_area_cur = boundaries.area.sum() # with possible missing data that means could be less than total_area
 
     LOGGER.info(f"Data {tile_meta_path} crs {boundaries.crs} {boundaries.crs.axis_info[0].unit_name}")
 
     # area histogram
-    fig, ax = plt.subplots(ncols=2, figsize=(15, 20))
+    fig, ax = plt.subplots(ncols=3, figsize=(15, 10))
     tile_id = os.path.splitext(os.path.split(tile_meta_path)[1])[0]
+    abs_path = os.path.split(tile_meta_path)[0]
+    list_areas = [
+        0, 1e-3, 1e-2, 0.5, 1.5, 2.5, 5, 12, 25, 50, 100, 1000
+    ]
+    areas_cat = [(f"{list_areas[low_ind]}-"
+                  f"{list_areas[low_ind + 1] if low_ind + 1 < len(list_areas) else ''}") for low_ind in range(len(list_areas))]
+    LOGGER.info(areas_cat)
 
     for ind, (feature_name, vector_file_path) in enumerate(zip(["CADASTRE", "PREDICTED"],
                                               [cadastre_tile_path,
@@ -146,11 +170,21 @@ def total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path):
         metrics_dict[f'Total_{feature_name}_prc_cur'] = 100 * metrics_dict[f'Total_{feature_name}_area'] / total_tile_area_cur
 
         data["area_ha"] = data.area / 10**4
-    #     data[["area_ha"]].plot(kind='kde', title =f"{tile_id} {feature_name} area/ha "
-    #                                               f"{int(data['area_ha'].min())}"
-    #                                               f"{int(data['area_ha'].mean())}"
-    #                                               f" {int(data['area_ha'].max())}", ax=ax[ind], legend=True, fontsize=12)
-    # plt.show()
+        data["area_cat"] = data["area_ha"].apply(lambda row: categorize_area(row,
+                                                                             list_areas=list_areas))
+
+        data["area_cat"].value_counts().plot(kind='bar', title=f"{tile_id} bar plot (CADASTRE - green,\n"
+                                                               f"PREDICTED - red)", ax=ax[0],
+                                             legend=True, fontsize=12,
+                                             alpha=0.5,
+                                             y=areas_cat, color='red' if ind else 'green')
+        data["area_cat"].value_counts().plot(kind='pie', title=f"{tile_id} {feature_name} area/ha "
+                                                               f"min={int(data['area_ha'].min())}"
+                                                               f"mean={int(data['area_ha'].mean())}"
+                                                               f"max={int(data['area_ha'].max())}", ax=ax[1+ind],
+                                             legend=True, fontsize=12)
+
+    plt.savefig(os.path.join(abs_path, f"Area_statistics.png"))
 
     # add general metadata of the tile
     metrics_dict.update(boundaries[general_meta_col].iloc[0].to_dict())
@@ -258,9 +292,8 @@ def display_metrics(eopatch_folder, obj_metrics=False):
     return metrics_dict
 
 def get_obj_metrics(metrics_df, flag_data):
-    (all_tps, all_fps, all_fns) = metrics_df[~flag_data][["tps_obj", "fps_obj", "fns_obj",
+    all_tps, all_fps, all_fns = metrics_df[~flag_data][["tps_obj", "fps_obj", "fns_obj",
                                                       ]].sum(axis=0)
-
     if all_tps + all_fps > 0:
         object_precision = all_tps / (all_tps + all_fps)
     else:
@@ -270,12 +303,14 @@ def get_obj_metrics(metrics_df, flag_data):
         object_recall = all_tps / (all_tps + all_fns)
     else:
         object_recall = float('nan')
-    metrics_df["Recall_object"] = object_recall
-    metrics_df["Precision_object"] = object_precision
 
-    (metrics_df["Oversegmentation"],
-     metrics_df["Undersegmentation"]) = metrics_df[~flag_data][["over_segm", "under_segm"]].nanmean(axis=0)
-    return metrics_df
+    over_segm, under_segm = metrics_df[~flag_data][["over_segm", "under_segm"]].mean(axis=0)
+    return {
+        "Recall_object": object_recall,
+        "Precision_object": object_precision,
+        "Oversegmentation": over_segm,
+        "Undersegmentation": under_segm,
+    }
 
 
 def main():
@@ -316,12 +351,13 @@ def main():
 
     total_metrics_dict = total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path)
     LOGGER.info(total_metrics_dict) # TODO resolve for area visualization (log transform)
+    1/0
 
     score_list = []
     for eopatch_folder in tqdm(eopatches_path):
         # creates gt and predicted masks from vectors (MOST important method)
-        # get_masks_pred_gt(eopatch_folder, cadastre_tile_path, pred_file_path)
-        VISUALIZE = False
+        get_masks_pred_gt(eopatch_folder, cadastre_tile_path, pred_file_path)
+        #VISUALIZE = True
         if VISUALIZE:  # for all visualizations eopatch image (rgb) bands are needed
             eopatch = EOPatch.load(eopatch_folder)
             visualize_eopatch(eopatch, eopatch_folder=eopatch_folder)
@@ -350,6 +386,9 @@ def main():
                 f"but not available cadastre data for comparison "
                 f"\n {len(metrics_df[flag_data])} from {len(metrics_df)}")
     # compute mean metrics only for the patches with available cadastre data
+    if obj_metrics:
+        obj_metrics_dict = get_obj_metrics(metrics_df, flag_data)
+
     mean = metrics_df[~flag_data][col_mean].mean(axis=0)
     metrics_df["no_CADASTRE_data"] = flag_data
     metrics_df = pd.concat([metrics_df, pd.DataFrame([mean])], axis=0)
@@ -366,12 +405,12 @@ def main():
     metrics_df["F1_pixel"] = ((2 * metrics_df["Precision_pixel"] * metrics_df["Recall_pixel"]) /
                               (metrics_df["Precision_pixel"] + metrics_df["Recall_pixel"] + eps))
 
+    if obj_metrics:
+        total_metrics_dict.update(obj_metrics_dict)
     # general metrics
     for key, val in total_metrics_dict.items():
         metrics_df[key] = val
 
-    if obj_metrics:
-        metrics_df = get_obj_metrics(metrics_df, flag_data)
     # rounding
     col_r_int = ['CADASTRE_num_pol', 'CADASTRE_max_areas/m^2',
                 'CADASTRE_min_areas/m^2', 'CADASTRE_avg_areas/m^2',
