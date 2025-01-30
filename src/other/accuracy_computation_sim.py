@@ -8,15 +8,15 @@ import shapely
 from matplotlib import pyplot as plt
 import numpy as np
 from tqdm import tqdm
-from sklearn.metrics import matthews_corrcoef, cohen_kappa_score, confusion_matrix, accuracy_score, \
-    ConfusionMatrixDisplay
+from sklearn.metrics import matthews_corrcoef, cohen_kappa_score, confusion_matrix, accuracy_score
+
 
 import fs.move  # required by eopatch.save
 from eolearn.core import EOPatch
 
 
-from utils_plot import draw_true_color, draw_bbox, draw_vector_timeless, draw_mask
-from transform_vector2mask import main_rastorize_vector
+from utils_plot import visualize_eopatch, display_cm, visualize_eopatch_obj
+from transform_vector2mask import get_masks_pred_gt
 
 # Add the src directory to the path
 src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -29,14 +29,6 @@ LOGGER = get_logger(__name__)
 
 VISUALIZE = False
 
-def display_cm(cm):
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['no field', 'field'])
-    # 0 - no field, 1 - field
-    disp.plot(cmap=plt.cm.Blues)
-    plt.title('Confusion Matrix')
-    plt.xlabel('Predicted Label')
-    plt.ylabel('True Label')
-    plt.show()
 
 
 def compute_iou_from_cm(cm):
@@ -81,23 +73,6 @@ def comp_scores(mask_gt, mask_pred):
     return metrics_dict
 
 
-def get_masks_pred_gt(eopatch_folder, cadastre_tile_path,
-    pred_file_path):
-    for feature_name, vector_file_path in zip(["CADASTRE", "PREDICTED"],
-                                              [cadastre_tile_path,
-                                               pred_file_path]):
-        rasterise_gsaa_config = {
-            "vector_file_path": vector_file_path,
-            "eopatches_folder": eopatch_folder,
-            "feature_name": feature_name,
-            "vector_feature": ["vector_timeless", feature_name],
-            "extent_feature": ["mask_timeless", f"EXTENT_{feature_name}"],
-            "boundary_feature": ["mask_timeless", f"BOUNDARY_{feature_name}"],
-            # "distance_feature": ["data_timeless", "DISTANCE"],
-        }
-        main_rastorize_vector(rasterise_gsaa_config)
-
-
 def vector_analyses(vector, sub_name='CADASTRE'):
     areas = vector.area # in square meters
     metrics_dict = {
@@ -107,6 +82,31 @@ def vector_analyses(vector, sub_name='CADASTRE'):
         f"{sub_name}_avg_areas/m^2": areas.mean(),
     }
     return metrics_dict
+
+def over_under_segmentation_metrics(gt_polygon, pred_polygons):
+    """
+    Compute over-segmentation (0 is perfect score, 1 high degree of over-segm)
+    and under-segmentation following the logic
+    First mentioning of metrics
+    https://www.researchgate.net/publication/224602240_A_Novel_Protocol_for_Accuracy_Assessment_in_Classification_of_Very_High_Resolution_Images
+    ResUnet-a (https://arxiv.org/pdf/1910.12023)
+    niva code (https://github.com/sentinel-hub/eo-flow/blob/70a426fe3ab07d8ec096e06af4db7e445af1e740/eoflow/models/metrics.py#L169)
+
+        Args:
+            gt_polygon (shapely): one reference geometry polygon
+            pred_polygons (geopandas): several predicted polygons that intersect with reference one
+        Returns
+            (over_segmentation, under_segmentation)
+    """
+    intersections = gt_polygon.intersection(pred_polygons)
+    pred_polygon = pred_polygons.iloc[intersections.area.argmax()]
+    max_intersection = intersections.area.max()
+    under_segm = 1. - max_intersection / pred_polygon.geometry.area # small minus values happen
+    over_segm = 1. - max_intersection / gt_polygon.area # small minus values happen
+
+    return np.clip(over_segm, 0, 1), np.clip(under_segm, 0, 1)
+
+
 
 def total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path):
     metrics_dict = {}
@@ -130,9 +130,13 @@ def total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path):
 
     LOGGER.info(f"Data {tile_meta_path} crs {boundaries.crs} {boundaries.crs.axis_info[0].unit_name}")
 
-    for feature_name, vector_file_path in zip(["CADASTRE", "PREDICTED"],
+    # area histogram
+    fig, ax = plt.subplots(ncols=2, figsize=(15, 20))
+    tile_id = os.path.splitext(os.path.split(tile_meta_path)[1])[0]
+
+    for ind, (feature_name, vector_file_path) in enumerate(zip(["CADASTRE", "PREDICTED"],
                                               [cadastre_tile_path,
-                                               pred_file_path]):
+                                               pred_file_path])):
         data = gpd.read_file(vector_file_path)
         data = data.to_crs(epsg=epsg)
         LOGGER.info(f"Data {vector_file_path} crs {data.crs} {data.crs.axis_info[0].unit_name}")
@@ -140,6 +144,14 @@ def total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path):
         metrics_dict[f'Total_{feature_name}_area'] = data.area.sum()
         metrics_dict[f'Total_{feature_name}_prc'] = 100 * metrics_dict[f'Total_{feature_name}_area'] / total_tile_area
         metrics_dict[f'Total_{feature_name}_prc_cur'] = 100 * metrics_dict[f'Total_{feature_name}_area'] / total_tile_area_cur
+
+        data["area_ha"] = data.area / 10**4
+    #     data[["area_ha"]].plot(kind='kde', title =f"{tile_id} {feature_name} area/ha "
+    #                                               f"{int(data['area_ha'].min())}"
+    #                                               f"{int(data['area_ha'].mean())}"
+    #                                               f" {int(data['area_ha'].max())}", ax=ax[ind], legend=True, fontsize=12)
+    # plt.show()
+
     # add general metadata of the tile
     metrics_dict.update(boundaries[general_meta_col].iloc[0].to_dict())
     return metrics_dict
@@ -166,6 +178,9 @@ def get_object_level_metrics(y_true_shapes, y_pred_shapes, iou_threshold=0.5):
     tp_js = set()  # keep track of which of the predicted shapes are true positives
     fn_is = set()  # keep track of which of the true shapes are false negatives
     matched_js = set()
+
+    over_segm, under_segm, num_cor = 0, 0, 0
+
     # takes long to compute
     for i, y_true_shape in enumerate(y_true_shapes.geometry):
         matching_j = None
@@ -173,6 +188,15 @@ def get_object_level_metrics(y_true_shapes, y_pred_shapes, iou_threshold=0.5):
             continue
 
         y_intersect = y_pred_shapes[y_true_shape.intersects(y_pred_shapes.geometry)] # shape 0, 1, 2, 3
+
+        if len(y_intersect) >= 1:
+            # compute over(under)-segmentation
+            over_segm_cur, under_segm_cur = over_under_segmentation_metrics(gt_polygon=y_true_shape,
+                                                                            pred_polygons=y_pred_shapes)
+            over_segm += over_segm_cur
+            under_segm += under_segm_cur
+            num_cor += 1
+
         for j, y_pred_shape in y_intersect.geometry.items():
             intersection = y_true_shape.intersection(y_pred_shape)
             union = y_true_shape.union(y_pred_shape)
@@ -191,14 +215,27 @@ def get_object_level_metrics(y_true_shapes, y_pred_shapes, iou_threshold=0.5):
             fns += 1
     fps = len(y_pred_shapes) - len(matched_js)
     fp_js = set(range(len(y_pred_shapes))) - matched_js  # compute which of the predicted shapes are false positives
-    # Create masks/vectors of the true positives, false positives, and false negatives
+
+    if num_cor: # in case no gt / reference data
+        over_segm /= num_cor
+        under_segm /= num_cor
+    else:
+        over_segm, under_segm = np.nan, np.nan
+
     masks = {
     "tp_true": y_true_shapes.iloc[list(tp_is)],
     "tp_pred": y_pred_shapes.iloc[list(tp_js)],
     "fp_pred": y_pred_shapes.iloc[list(fp_js)],
     "fn_true": y_true_shapes.iloc[list(fn_is)],
     }
-    return tps, fps, fns, masks
+    metrics_dict = {
+        "tps_obj": tps,
+        "fps_obj": fps,
+        "fns_obj": fns,
+        "over_segm": over_segm,
+        "under_segm": under_segm,
+    }
+    return metrics_dict, masks
 
 
 def display_metrics(eopatch_folder, obj_metrics=False):
@@ -209,13 +246,9 @@ def display_metrics(eopatch_folder, obj_metrics=False):
                                             sub_name=sub_name))
 
     if obj_metrics:
-        tps, fps, fns, masks = get_object_level_metrics(eopatch.vector_timeless['CADASTRE'],
+        metrics_dict_c, masks = get_object_level_metrics(eopatch.vector_timeless['CADASTRE'],
                                                  eopatch.vector_timeless['PREDICTED'])
-        metrics_dict.update({
-            "tps_obj": tps,
-            "fps_obj": fps,
-            "fns_obj": fns,
-        })
+        metrics_dict.update(metrics_dict_c)
         # visualization of object vectors for tp, fn, fp, tn
         # visualize_eopatch_obj(eopatch, masks)
 
@@ -225,8 +258,9 @@ def display_metrics(eopatch_folder, obj_metrics=False):
     return metrics_dict
 
 def get_obj_metrics(metrics_df, flag_data):
-    all_tps, all_fps, all_fns = metrics_df[~flag_data][["tps_obj", "fps_obj", "fns_obj"]].sum(axis=0)
-    # TODO values close to zero -> eps
+    (all_tps, all_fps, all_fns) = metrics_df[~flag_data][["tps_obj", "fps_obj", "fns_obj",
+                                                      ]].sum(axis=0)
+
     if all_tps + all_fps > 0:
         object_precision = all_tps / (all_tps + all_fps)
     else:
@@ -238,76 +272,10 @@ def get_obj_metrics(metrics_df, flag_data):
         object_recall = float('nan')
     metrics_df["Recall_object"] = object_recall
     metrics_df["Precision_object"] = object_precision
+
+    (metrics_df["Oversegmentation"],
+     metrics_df["Undersegmentation"]) = metrics_df[~flag_data][["over_segm", "under_segm"]].nanmean(axis=0)
     return metrics_df
-
-
-def visualize_eopatch_obj(eop, masks):
-    fig, axis = plt.subplots(figsize=(15, 10), ncols=5, sharey=True)
-    eop.vector_timeless['CADASTRE'].plot(ax=axis[0], color='green', alpha=0.5)
-    eop.vector_timeless['PREDICTED'].plot(ax=axis[0], color='red', alpha=0.5)
-
-    for ind, (key, mask) in enumerate(masks.items()):
-        mask.plot(ax=axis[ind+1], color='green', alpha=0.5)
-        axis[ind+1].grid()
-        axis[ind+1].set_title(f"{key}")
-    plt.show()
-
-
-def visualize_eopatch(eop):
-    fig, axis = plt.subplots(figsize=(15, 10), ncols=1, sharey=True)
-    eop.vector_timeless['CADASTRE'].plot(ax=axis, color='green', alpha=0.5)
-    eop.vector_timeless['PREDICTED'].plot(ax=axis, color='red', alpha=0.5)
-    plt.show()
-
-    flag_bands = 'BANDS' in eop.data
-    # holes in polygons are preserved
-    for mask_name in ["EXTENT", "BOUNDARY"]:
-        time_idx = 0  # only one tile stamp
-        fig, ax = plt.subplots(ncols=4, figsize=(15, 20))
-        if flag_bands:
-            draw_true_color(ax[0], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
-                            grid=False)
-        draw_bbox(ax[0], eop)
-        draw_vector_timeless(ax[0], eop, vector_name='CADASTRE', alpha=.3)
-        if flag_bands:
-            draw_true_color(ax[1], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
-                            grid=False)
-        draw_bbox(ax[1], eop)
-        draw_mask(ax[1], eop, time_idx=None, feature_name=f'{mask_name}_CADASTRE', alpha=.3)
-        if flag_bands:
-            draw_true_color(ax[2], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
-                            grid=False)
-        draw_bbox(ax[2], eop)
-        draw_mask(ax[2], eop, time_idx=None, feature_name=f'{mask_name}_PREDICTED', alpha=.3)
-        if flag_bands:
-            draw_true_color(ax[3], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
-                            grid=False)
-        ax[3].grid()
-        plt.show()
-
-    # for mask_name in ["EXTENT", "BOUNDARY"]:
-    #     time_idx = 0  # only one tile stemp
-    #     fig, ax = plt.subplots(ncols=4, figsize=(15, 20))
-    #     draw_true_color(ax[0], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
-    #                     grid=False)
-    #     draw_bbox(ax[0], eop)
-    #     draw_vector_timeless(ax[0], eop, vector_name='PREDICTED', alpha=.3)
-    #
-    #     draw_true_color(ax[1], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
-    #                     grid=False)
-    #     draw_bbox(ax[1], eop)
-    #     draw_mask(ax[1], eop, time_idx=None, feature_name=f'{mask_name}_PREDICTED', alpha=.3)
-    #
-    #     draw_true_color(ax[2], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
-    #                     grid=False)
-    #     draw_bbox(ax[2], eop)
-    #     draw_mask(ax[2], eop, time_idx=None, feature_name=f'{mask_name}_PREDICTED', alpha=.3,
-    #               data_timeless=True)  # !!!!!!!!! visualize predicted masks before vectorization step
-    #     draw_true_color(ax[3], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
-    #                     grid=False)
-    #     ax[3].grid()
-    #     plt.show()
-
 
 
 def main():
@@ -347,19 +315,21 @@ def main():
         args.eopatches_folder) if f.is_dir() and f.name.startswith('eopatch')]
 
     total_metrics_dict = total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path)
-    LOGGER.info(total_metrics_dict)
+    LOGGER.info(total_metrics_dict) # TODO resolve for area visualization (log transform)
 
     score_list = []
     for eopatch_folder in tqdm(eopatches_path):
         # creates gt and predicted masks from vectors (MOST important method)
-        get_masks_pred_gt(eopatch_folder, cadastre_tile_path, pred_file_path)
-
+        # get_masks_pred_gt(eopatch_folder, cadastre_tile_path, pred_file_path)
+        VISUALIZE = False
         if VISUALIZE:  # for all visualizations eopatch image (rgb) bands are needed
             eopatch = EOPatch.load(eopatch_folder)
-            visualize_eopatch(eopatch)
+            visualize_eopatch(eopatch, eopatch_folder=eopatch_folder)
 
         metrics_dict = display_metrics(eopatch_folder, obj_metrics=obj_metrics)
         score_list.append(metrics_dict)
+        LOGGER.info(metrics_dict)
+
 
     metrics_df = pd.DataFrame(score_list)
 
@@ -393,7 +363,8 @@ def main():
                 metrics_df['TP (field t, field p)'] + metrics_df['FP (no field t, field p)'] + eps)
     metrics_df["Recall_pixel"] = metrics_df['TP (field t, field p)'] / (
                 metrics_df['TP (field t, field p)'] + metrics_df['FN (field t, no field p)'] + eps)
-    metrics_df["F1_pixel"] = (2 * metrics_df["Precision_pixel"] * metrics_df["Recall_pixel"]) / (metrics_df["Precision_pixel"] + metrics_df["Recall_pixel"] + eps)
+    metrics_df["F1_pixel"] = ((2 * metrics_df["Precision_pixel"] * metrics_df["Recall_pixel"]) /
+                              (metrics_df["Precision_pixel"] + metrics_df["Recall_pixel"] + eps))
 
     # general metrics
     for key, val in total_metrics_dict.items():
@@ -430,7 +401,8 @@ def main():
 
 
     if obj_metrics:
-        col_r_float.extend(['Recall_object', 'Precision_object'])
+        col_r_float.extend(['Recall_object', 'Precision_object',
+                            'Oversegmentation', 'Undersegmentation'])
 
     metrics_df[col_r_int] = metrics_df[col_r_int].apply(lambda x: np.round(x))
     metrics_df[col_r_float] = metrics_df[col_r_float].apply(lambda x: np.round(x, 2))
