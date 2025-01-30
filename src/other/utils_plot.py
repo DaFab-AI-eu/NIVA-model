@@ -7,12 +7,13 @@
 # This source code is licensed under the MIT license found in the LICENSE
 # file in the root directory of this source tree.
 #
-
+import os
 from typing import List, Union, Tuple
 
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import patches, patheffects
+from shapely.geometry import box
 
 from eolearn.core import EOPatch
 from shapely.geometry import Polygon, MultiPolygon
@@ -168,6 +169,24 @@ def draw_bbox(ax, eopatch: EOPatch, color: str = 'r', lw: int = 2, outline: bool
     bbox_poly = eopatch.bbox.get_polygon()
     draw_poly(ax, Polygon(bbox_poly), color=color, lw=lw, outline=outline)
 
+def draw_bbox_bounds(ax, bounds, color: str = 'r', lw: int = 2, outline: bool = True):
+    """
+    Plots an EOPatch bounding box onto a matplotlib axes.
+    Parameters
+    ----------
+    ax: Matplotlib axes on which to plot.
+    bounds: (minx, miny, maxx, maxy)
+    color: Color of the BBOX plot.
+    lw: Line width.
+    outline: Should the plot be additionally outlined.
+
+    Returns None
+    -------
+
+    """
+    bbox_poly = box(*bounds)
+    draw_poly(ax, Polygon(bbox_poly), color=color, lw=lw, outline=outline)
+
 
 def draw_mask(ax, eopatch: EOPatch, time_idx: Union[List[int], int, None], feature_name: str, grid: bool = True,
               vmin: int = 0, vmax: int = 1, alpha: float = 1.0, data_timeless = False):
@@ -228,3 +247,151 @@ def draw_vector_timeless(ax, eopatch: EOPatch, vector_name: str, color: str = 'b
 
     """
     eopatch.vector_timeless[vector_name].plot(ax=ax, color=color, alpha=alpha)
+
+
+def visualize_eopatch(eop, eopatch_folder):
+    abs_folder, eop_name = os.path.split(eopatch_folder)
+    abs_folder = os.path.join(os.path.split(abs_folder)[0], "plots")
+    os.makedirs(abs_folder, exist_ok=True)
+
+    flag_bands = 'BANDS' in eop.data
+    # holes in polygons are preserved
+    time_idx = 0  # only one tile stamp
+    fig, ax = plt.subplots(ncols=4, nrows=2, figsize=(15, 10))
+    for ind, mask_name in enumerate(["EXTENT", "BOUNDARY"]):
+        # cadastre vector + rgb
+        if flag_bands:
+            draw_true_color(ax[ind][0], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
+                            grid=False)
+        draw_bbox(ax[ind][0], eop)
+        draw_vector_timeless(ax[ind][0], eop, vector_name='CADASTRE' if not ind else 'PREDICTED',
+                             alpha=.3, color='r')
+        ax[ind][0].set_title(f"{'CADASTRE' if not ind else 'PREDICTED'} vector")
+        ax[ind][0].set_xticks([])
+        ax[ind][0].set_yticks([])
+        ax[ind][0].set_xlim(eop.bbox.min_x, eop.bbox.max_x)
+        ax[ind][0].set_ylim(eop.bbox.min_y, eop.bbox.max_y)
+        # cadastre extent + rgb
+        if flag_bands:
+            draw_true_color(ax[ind][1], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
+                            grid=False)
+        draw_bbox(ax[ind][1], eop)
+        draw_mask(ax[ind][1], eop, time_idx=None, feature_name=f'{mask_name}_CADASTRE', alpha=.3)
+        ax[ind][1].set_xticks([])
+        ax[ind][1].set_yticks([])
+        # rgb + predicted extent
+        if flag_bands:
+            draw_true_color(ax[ind][2], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
+                            grid=False)
+        draw_bbox(ax[ind][2], eop)
+        draw_mask(ax[ind][2], eop, time_idx=None, feature_name=f'{mask_name}_PREDICTED', alpha=.3)
+        ax[ind][2].set_xticks([])
+        ax[ind][2].set_yticks([])
+
+        if not ind:
+            # rgb only
+            if flag_bands:
+                draw_true_color(ax[ind][3], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
+                                grid=False)
+            ax[ind][3].grid()
+            ax[ind][3].set_title('RGB bands')
+            ax[ind][3].set_xticks([])
+            ax[ind][3].set_yticks([])
+        else:
+            # vector cadastre + vector predicted
+            draw_bbox(ax[ind][3], eop)
+            eop.vector_timeless['CADASTRE'].plot(ax=ax[ind][3], color='green', alpha=0.5)
+            eop.vector_timeless['PREDICTED'].plot(ax=ax[ind][3], color='red', alpha=0.5)
+            ax[ind][3].set_title('Field boundaries PREDICTED (red),\n CADASTRE (green)')
+            ax[ind][3].set_xlim(eop.bbox.min_x, eop.bbox.max_x)
+            ax[ind][3].set_ylim(eop.bbox.min_y, eop.bbox.max_y)
+            ax[ind][3].set_xticks([])
+            ax[ind][3].set_yticks([])
+    plt.tight_layout()
+    plt.savefig(os.path.join(abs_folder, f'{eop_name}_all.png'))
+    # plt.show()
+
+    tidx = 0  # select one timestamp
+    viz_factor = 3.5
+    # "proj:transform":[10,0,699960,0,-10,5700000] y minus
+    begin_x, begin_y, len_xy = 400, 400, 200
+    xmin, xmax, ymax, ymin = (eop.bbox.min_x + begin_x * 10,
+                              eop.bbox.min_x + (begin_x + len_xy) * 10,
+                              eop.bbox.max_y - begin_y * 10,
+                              eop.bbox.max_y - (begin_y + len_xy) * 10)
+
+    new_extent = (xmin, xmax, ymin, ymax)
+
+    fig, axs = plt.subplots(figsize=(15, 10), ncols=3, nrows=2, sharey=True)
+    axs[0][0].imshow(viz_factor * eop.data['BANDS'][tidx][begin_x:begin_x + len_xy, begin_y:begin_y + len_xy,
+                               [2, 1, 0]] / 10000,
+                  vmin=0, vmax=1, extent=new_extent)
+    axs[0][0].set_title('RGB bands')
+    axs[0][0].set_aspect(1)
+    axs[0][0].set_xticks([])
+    axs[0][0].set_yticks([])
+
+    for ind, name_p in enumerate(['PREDICTED', 'CADASTRE']):
+        axs[ind][1].imshow(viz_factor * eop.data['BANDS'][tidx][begin_x:begin_x+len_xy, begin_y:begin_y+len_xy,
+                                   [2, 1, 0]] / 10000,
+                      vmin=0, vmax=1, extent=new_extent)
+        axs[ind][1].set_title('RGB bands')
+        axs[ind][1].imshow(eop.mask_timeless[f'EXTENT_{name_p}'].squeeze()[begin_x:begin_x+len_xy, begin_y:begin_y+len_xy],
+                      vmin=0, vmax=1, alpha=.2, extent=new_extent)
+        axs[ind][1].set_title(f'Extent {name_p}')
+        axs[ind][1].set_aspect(1)
+        axs[ind][1].set_xticks([])
+        axs[ind][1].set_yticks([])
+
+        axs[ind][2].imshow(viz_factor * eop.data['BANDS'][tidx][begin_x:begin_x+len_xy, begin_y:begin_y+len_xy,
+                                   [2, 1, 0]] / 10000, extent=new_extent)
+        axs[ind][2].set_title('RGB bands')
+        axs[ind][2].imshow(eop.mask_timeless[f'BOUNDARY_{name_p}'].squeeze()[begin_x:begin_x+len_xy, begin_y:begin_y+len_xy],
+                      vmin=0, vmax=1, alpha=.2, extent=new_extent)
+        axs[ind][2].set_title(f'Boundary {name_p}')
+
+        draw_bbox_bounds(ax=axs[ind][2], bounds=(xmin, ymin, xmax, ymax))
+
+        axs[ind][2].set_aspect(1)
+        axs[ind][2].set_xticks([])
+        axs[ind][2].set_yticks([])
+
+
+    cadastre = (eop.vector_timeless['CADASTRE']
+                .clip_by_rect(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax))
+    predicted = (eop.vector_timeless['PREDICTED']
+                 .clip_by_rect(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax))
+
+    draw_bbox_bounds(ax=axs[1][0], bounds=(xmin, ymin, xmax, ymax))
+    cadastre.plot(ax=axs[1][0], color='green', alpha=0.5, )
+    predicted.plot(ax=axs[1][0], color='red', alpha=0.5, )
+    axs[1][0].set_title(f'Extent overlay (green - CADASTRE, red - PREDICTED)')
+    axs[1][0].set_xlim(xmin, xmax)
+    axs[1][0].set_ylim(ymin, ymax)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(abs_folder, f'{eop_name}_zoomin_len_{len_xy}.png'))
+
+    # for mask_name in ["EXTENT", "BOUNDARY"]:
+    #     time_idx = 0  # only one tile stemp
+    #     fig, ax = plt.subplots(ncols=4, figsize=(15, 20))
+    #     draw_true_color(ax[0], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
+    #                     grid=False)
+    #     draw_bbox(ax[0], eop)
+    #     draw_vector_timeless(ax[0], eop, vector_name='PREDICTED', alpha=.3)
+    #
+    #     draw_true_color(ax[1], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
+    #                     grid=False)
+    #     draw_bbox(ax[1], eop)
+    #     draw_mask(ax[1], eop, time_idx=None, feature_name=f'{mask_name}_PREDICTED', alpha=.3)
+    #
+    #     draw_true_color(ax[2], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
+    #                     grid=False)
+    #     draw_bbox(ax[2], eop)
+    #     draw_mask(ax[2], eop, time_idx=None, feature_name=f'{mask_name}_PREDICTED', alpha=.3,
+    #               data_timeless=True)  # !!!!!!!!! visualize predicted masks before vectorization step
+    #     draw_true_color(ax[3], eop, time_idx=time_idx, factor=3.5 / 10000, feature_name='BANDS', bands=(2, 1, 0),
+    #                     grid=False)
+    #     ax[3].grid()
+    #     plt.show()
+
