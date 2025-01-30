@@ -19,6 +19,9 @@ from eolearn.core import EOPatch
 from shapely.geometry import Polygon, MultiPolygon
 
 from logging import Logger
+
+from sklearn.metrics import ConfusionMatrixDisplay
+
 logger = Logger(__file__)
 
 
@@ -395,3 +398,23 @@ def visualize_eopatch(eop, eopatch_folder):
     #     ax[3].grid()
     #     plt.show()
 
+
+def display_cm(cm):
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['no field', 'field'])
+    # 0 - no field, 1 - field
+    disp.plot(cmap=plt.cm.Blues)
+    plt.title('Confusion Matrix')
+    plt.xlabel('Predicted Label')
+    plt.ylabel('True Label')
+    plt.show()
+
+def visualize_eopatch_obj(eop, masks):
+    fig, axis = plt.subplots(figsize=(15, 10), ncols=5, sharey=True)
+    eop.vector_timeless['CADASTRE'].plot(ax=axis[0], color='green', alpha=0.5)
+    eop.vector_timeless['PREDICTED'].plot(ax=axis[0], color='red', alpha=0.5)
+
+    for ind, (key, mask) in enumerate(masks.items()):
+        mask.plot(ax=axis[ind+1], color='green', alpha=0.5)
+        axis[ind+1].grid()
+        axis[ind+1].set_title(f"{key}")
+    plt.show()

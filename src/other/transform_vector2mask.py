@@ -101,3 +101,19 @@ def extent2boundary(eopatch, extent_feature, boundary_feature, structure=disk(2)
     eopatch.add_feature(FeatureType.MASK_TIMELESS, boundary_feature,
                         boundary_mask[..., np.newaxis])
     return eopatch
+
+def get_masks_pred_gt(eopatch_folder, cadastre_tile_path,
+    pred_file_path):
+    for feature_name, vector_file_path in zip(["CADASTRE", "PREDICTED"],
+                                              [cadastre_tile_path,
+                                               pred_file_path]):
+        rasterise_gsaa_config = {
+            "vector_file_path": vector_file_path,
+            "eopatches_folder": eopatch_folder,
+            "feature_name": feature_name,
+            "vector_feature": ["vector_timeless", feature_name],
+            "extent_feature": ["mask_timeless", f"EXTENT_{feature_name}"],
+            "boundary_feature": ["mask_timeless", f"BOUNDARY_{feature_name}"],
+            # "distance_feature": ["data_timeless", "DISTANCE"],
+        }
+        main_rastorize_vector(rasterise_gsaa_config)
