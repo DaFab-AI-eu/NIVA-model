@@ -170,20 +170,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--tile_path", type=str, required=True)
     parser.add_argument("-o", "--eopatches_folder", type=str, required=True)
-    parser.add_argument("--create_empty", default=True, type=bool, required=False)
+    parser.add_argument("--create_empty", default=False, type=bool, required=False)
 
     args = parser.parse_args()
 
     split_config = {
         "height": 1000,
         "width": 1000,
-        "overlap": 200,
+        "overlap": 0, # instead of 200 in inference-workflow
         "num_split": -1,  # all sub-tile splits with parameter -1
         "begin_x": 0,
         "begin_y": 0,
         "bad_percentage": 0.70,  # max percentage of bad pixels in the patch to not consider it at all
-        "vgt_percentage": 0.1,  # min vegetation percentage to consider for crop fields
-        "cld_percentage": 0.10,  # for accuracy computation should be low
+        "vgt_percentage": 0.05,  # min vegetation percentage to consider for crop fields
+        "cld_percentage": 0.05,  # for accuracy computation should be low
     }
 
     split_config['tile_path'] = args.tile_path
