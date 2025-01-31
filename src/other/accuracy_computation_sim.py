@@ -148,7 +148,7 @@ def total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path):
     LOGGER.info(f"Data {tile_meta_path} crs {boundaries.crs} {boundaries.crs.axis_info[0].unit_name}")
 
     # area histogram
-    fig, ax = plt.subplots(ncols=3, figsize=(15, 10))
+    fig, ax = plt.subplots(ncols=1, figsize=(10, 10))
     tile_id = os.path.splitext(os.path.split(tile_meta_path)[1])[0]
     abs_path = os.path.split(tile_meta_path)[0]
     list_areas = [
@@ -156,7 +156,6 @@ def total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path):
     ]
     areas_cat = [(f"{list_areas[low_ind]}-"
                   f"{list_areas[low_ind + 1] if low_ind + 1 < len(list_areas) else ''}") for low_ind in range(len(list_areas))]
-    LOGGER.info(areas_cat)
 
     for ind, (feature_name, vector_file_path) in enumerate(zip(["CADASTRE", "PREDICTED"],
                                               [cadastre_tile_path,
@@ -173,18 +172,15 @@ def total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path):
         data["area_cat"] = data["area_ha"].apply(lambda row: categorize_area(row,
                                                                              list_areas=list_areas))
 
-        data["area_cat"].value_counts().plot(kind='bar', title=f"{tile_id} bar plot (CADASTRE - green,\n"
-                                                               f"PREDICTED - red)", ax=ax[0],
+        data["area_cat"].value_counts().plot(kind='barh', title=f"{tile_id} Number of polygons belonging\n"
+                                                                f" to the area (in ha) category",
+                                             ax=ax,
                                              legend=True, fontsize=12,
                                              alpha=0.5,
-                                             y=areas_cat, color='red' if ind else 'green')
-        data["area_cat"].value_counts().plot(kind='pie', title=f"{tile_id} {feature_name} area/ha "
-                                                               f"min={int(data['area_ha'].min())}"
-                                                               f"mean={int(data['area_ha'].mean())}"
-                                                               f"max={int(data['area_ha'].max())}", ax=ax[1+ind],
-                                             legend=True, fontsize=12)
+                                             y=areas_cat, color='red' if ind else 'green',
+                                             label=feature_name)
 
-    plt.savefig(os.path.join(abs_path, f"Area_statistics.png"))
+    plt.savefig(os.path.join(abs_path, f"{tile_id}_Area_statistics.png"))
 
     # add general metadata of the tile
     metrics_dict.update(boundaries[general_meta_col].iloc[0].to_dict())
@@ -350,8 +346,7 @@ def main():
         args.eopatches_folder) if f.is_dir() and f.name.startswith('eopatch')]
 
     total_metrics_dict = total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path)
-    LOGGER.info(total_metrics_dict) # TODO resolve for area visualization (log transform)
-    1/0
+    LOGGER.info(total_metrics_dict)
 
     score_list = []
     for eopatch_folder in tqdm(eopatches_path):
