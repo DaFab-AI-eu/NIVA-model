@@ -24,9 +24,10 @@
 # "S2A_30UWU_20230302_0_L2A" # "S2B_31TEN_20230420_0_L2A"
 
 
-$expname = "workflow_v1.0.1" # "training_20241028_195657"
+$expname = "workflow"
+$version = "v1.0.1" # "training_20241028_195657"
 
-$base_abs = ""
+$base_abs = "."
 $project_root = "$base_abs\niva_check\data\accuracy\$expname"
 $code_path = "$base_abs\NIVA-model\src\other"
 $path_to_borders = "$base_abs\NIVA-model\data\\cadastre_metadata_v1.0.0.gpkg"
@@ -40,22 +41,24 @@ $path_to_borders = "$base_abs\NIVA-model\data\\cadastre_metadata_v1.0.0.gpkg"
 
 # https://gdal.org/en/stable/programs/gdal_translate.html
 # -scale 0 3000 0 255 -exponent 1
+# gdal_translate -of VRT -scale 0 3000 0 255 -exponent 1 "NETCDF:"""S2A_10SGG_20230426_0_L2A\\tile\\S2A_10SGG_20230426_0_L2A.nc""":B2" S2A_10SGG_20230426_0_L2A/tile/b2_scaled_3000.vrt
 
 $remove_outliers = 0
 $combine_regions = $true
 $SimTolerance = 5
 
+
 New-Item -ItemType Directory -Path (Split-Path -Parent $project_root) -ErrorAction Ignore | Out-Null
 
-$("S2A_33UUU_20240427_0_L2A", "S2B_32UPE_20240309_0_L2A") | ForEach-Object {
+$("S2B_32UPE_20240309_0_L2A") | ForEach-Object {
     $TileId = ${_}
     $out_file = "$project_root/intersection_" + "$TileId.json"
 
     # download tile meta data and predicted field boundaries for the tile
-    $pred_file_path_ = "$project_root\\$TileId\\predicted\\field-boundaries-$TileId.geojson"
+    $pred_file_path_ = "$project_root\\$TileId\\predicted\\field-boundaries-$TileId-$version.geojson"
     $path_tile_meta = "$project_root\\$TileId\\meta\\$TileId.json"
     # path to convert GeoJson to geopackage for more convenient spatial op
-    $pred_file_path = "$project_root\\$TileId\\predicted\\field-boundaries-$TileId.gpkg"
+    $pred_file_path = "$project_root\\$TileId\\predicted\\field-boundaries-$TileId-$version.gpkg"
 
     if (!(Test-Path $pred_file_path)) {
     # save to gpkg format
@@ -87,7 +90,7 @@ $("S2A_33UUU_20240427_0_L2A", "S2B_32UPE_20240309_0_L2A") | ForEach-Object {
         #./accuracy_comp.ps1 $TileId $expname $record.source_path $record.url $pred_file_path $project_root $code_path
         if (!($combine_regions)) {
             # compute accuracy metrics for the regional cadastre data
-            $final_file_name = "region_" + $filename + "_expname_" + $expname + "_r_" + "$remove_outliers"
+            $final_file_name = "region_" + $filename + "_expname_" + $expname + "_r_" + "$remove_outliers-$version"
             $metrics_path = "$project_root/$TileId/metrics_$final_file_name.csv"
             ./accuracy_comp_only.ps1 $TileId $pred_file_path $project_root $code_path $cadastre_tile_path $metrics_path $path_tile_meta
         }
@@ -103,8 +106,9 @@ $("S2A_33UUU_20240427_0_L2A", "S2B_32UPE_20240309_0_L2A") | ForEach-Object {
         }
         # compute accuracy metrics for the combined cadastre of regions data
         $filename = "combined"
-        $final_file_name = "region_" + $filename + "_expname_" + $expname + "_r_" + "$remove_outliers"
+        $final_file_name = "region_" + $filename + "_expname_" + $expname + "_r_" + "$remove_outliers-$version"
         $metrics_path = "$project_root/$TileId/metrics_$final_file_name.csv"
+        Write-Output "Computing accuracy scores $metrics_path"
         ./accuracy_comp_only.ps1 $TileId $pred_file_path $project_root $code_path $cadastre_tile_path $metrics_path $path_tile_meta
     }
 }
