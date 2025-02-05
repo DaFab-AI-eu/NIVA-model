@@ -76,14 +76,15 @@ def get_patch_stats(label_ds):
 
 def main():
     # input params
-    SENTINEL2_DIR = "ai4boundaries_dataset"
-
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--country", type=str, required=True,
                         default="NL")
+    parser.add_argument("-s", "--sentinel_dir", type=str, required=True,
+                        default="ai4boundaries_dataset")
     args = parser.parse_args()
 
     country = args.country
+    SENTINEL2_DIR = args.sentinel_dir
 
     final_path = os.path.join(SENTINEL2_DIR, "stats")
     SENTINEL2_DIR = os.path.join(SENTINEL2_DIR, country)
