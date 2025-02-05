@@ -14,13 +14,18 @@ from training.download_data import download_images
 RETRY_LIMIT = 5
 
 if __name__ == "__main__":
-    SENTINEL2_DIR = "ai4boundaries_dataset"
-
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--country", type=str, required=True,
                         default="NL")
+    parser.add_argument("-s", "--sentinel_dir", type=str, required=True,
+                        default="ai4boundaries_dataset")
+    parser.add_argument("-i", "--path_file", type=str, required=True,
+                        default="NL.csv",
+                        help="Input file containing images/masks urls to download")
     args = parser.parse_args()
+
     country = args.country
+    SENTINEL2_DIR = args.sentinel_dir
 
     folder_save = os.path.join(SENTINEL2_DIR, country)
     path_file = f"{SENTINEL2_DIR}/stats/{country}_sm_num_fields.csv"
