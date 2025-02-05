@@ -18,6 +18,7 @@ from niva_utils.config_loader import load_config  # noqa: E402
 CONFIG = load_config()
 
 from training.download_data import help_func
+from training.download_data import download_images
 
 RETRY_LIMIT = 5
 async def download_mask(fold_data, folder_save):
@@ -47,22 +48,34 @@ async def download_mask(fold_data, folder_save):
             )
 
 def main():
+    # input params
     split_filepath = "ai4boundaries_ftp_urls_sentinel2_split.csv"
-    SENTINEL2_DIR = "ai4boundaries_dataset"
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--country", type=str, required=True,
                         default="NL")
+    parser.add_argument("-s", "--sentinel_dir", type=str, required=False,
+                        default="ai4boundaries_dataset")
+    parser.add_argument("-i", "--split_filepath", type=str, required=False,
+                        help="Path to ai4boundaries_ftp_urls_sentinel2_split.csv",
+                        default=None)
+    parser.add_argument("-f", "--flag_masks_only", action='store_true', default=False)
     args = parser.parse_args()
 
     country = args.country
-
+    SENTINEL2_DIR = args.sentinel_dir
+    split_filepath = os.path.join(SENTINEL2_DIR, split_filepath) if not args.split_filepath else args.split_filepath
     SENTINEL2_DIR = os.path.join(SENTINEL2_DIR, country)
+    flag_masks_only = args.flag_masks_only
 
     data = pd.read_csv(split_filepath)
     fold_data = data[data["Country"] == country]
     os.makedirs(os.path.join(SENTINEL2_DIR, "masks"), exist_ok=True)
-    asyncio.run(download_mask(fold_data, SENTINEL2_DIR))
+    if not flag_masks_only:
+        os.makedirs(os.path.join(SENTINEL2_DIR, "images"), exist_ok=True)
+        asyncio.run(download_images(fold_data, SENTINEL2_DIR))
+    else:
+        asyncio.run(download_mask(fold_data, SENTINEL2_DIR))
 
 
 if __name__ == "__main__":
