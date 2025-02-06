@@ -59,7 +59,7 @@ def plot_patch(file_id, images, extent, boundary, distance, enum, time_data):
     alpha = 0.2
     ind_row = 0
 
-    num_fields = enum.max() + 1
+    num_fields = max(0, enum.max()) + 1
     colors = np.random.rand(num_fields, 3)
     colors[0] = np.array([0., 0., 0.]) # background color / without fields
     cmap = ListedColormap(colors, name='enum_cmap', N=num_fields)

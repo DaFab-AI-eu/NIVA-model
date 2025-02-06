@@ -16,7 +16,7 @@ config = {
     "biggest_area": 2500, # in pixels
     "smallest_solidity": 0.2,
     "biggest_solidity": 0.85,
-    "smallest_eccentricity": 0.1,
+    "smallest_eccentricity": 0.1, # circular shape ?
 }
 
 def get_patch_stats(label_ds):
