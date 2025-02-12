@@ -26,6 +26,10 @@ def main():
 
     parser.add_argument("--sim_tolerance", type=float, required=False,
                         default=5)
+    parser.add_argument("--smallest", type=float, required=False,
+                        default=10**3, help="Smallest area of crop field to filter (in m^2). "
+                                            "As Sentinel-2 10m resolution -> smallest visible "
+                                            "parcel 3pixel*3pixel((3*10)^2)")
 
 
     args = parser.parse_args()
@@ -34,6 +38,7 @@ def main():
     cadastre_tile_path = args.cadastre_tile_path
     tile_meta_path = args.tile_meta
     remove_outliers = args.remove_outliers
+    smallest_area = args.smallest
 
     tile_meta = gpd.read_file(tile_meta_path, columns=["geometry", "proj:epsg"])
     # read only the data for the given tile bounds
@@ -57,6 +62,10 @@ def main():
     # Columns for France : [ID_PARCEL, SURF_PARC, CODE_CULTU, CODE_GROUP, CULTURE_D1, CULTURE_D2, geometry]
     LOGGER.info(f"file {cadastre_path} len {len(data_gt)} and columns {data_gt.columns}")
     LOGGER.info(f"file {cadastre_path} crs {data_gt.crs}")
+    prev_len = len(data_gt)
+    data_gt = data_gt[data_gt.area > smallest_area]
+    LOGGER.info(f"File {cadastre_path} length after filtering smallest parcels "
+                f"{len(data_gt)}(-{int(100*len(data_gt)/prev_len)}%)")
     LOGGER.info(f"invalid geometries in dataset = {data_gt[~data_gt.geometry.is_valid]}")
     data_gt = data_gt[data_gt.geometry.is_valid]
     # no MultiPolygons
