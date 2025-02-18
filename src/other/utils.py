@@ -60,7 +60,7 @@ def match_predicted_validation_fields(gt_tile, pred_tile, gt_area_ls=1000,
 
     fields_intersect["fields_val_area"] = fields_intersect.geom_fields_val.area
     fields_intersect["fields_area"] = fields_intersect.geom_fields.area
-    return fields_intersect
+    return fields_intersect, fields_val, fields
 
 
 def categorize_area(area_ha, list_areas=[
@@ -80,11 +80,13 @@ def categorize_area(area_ha, list_areas=[
     return f"{list_areas[low_ind]}-{list_areas[high_ind]}"
 
 def visualize_missing_stats(fields_val, fields_intersect_ids,
-                            tile_id, list_areas, areas_cat, title='validation/cadastre'):
+                            tile_id, list_areas, areas_cat, title='validation/cadastre',
+                            plot_field=True):
     idx_unique = fields_intersect_ids.unique()
     if len(idx_unique) < len(fields_val):  # area stats
         missing_fields = len(fields_val) - len(idx_unique)
-        print(f"Warning: For {missing_fields} {title} field(s) no overlapping segmented fields were found.")
+        print(f"Warning: For {missing_fields}({int(100*missing_fields/len(fields_val))}%)"
+              f" {title} field(s) no overlapping segmented fields were found.")
         missed_fields_val = fields_val[~fields_val.index.isin(idx_unique)]
         missed_fields_val["area"] = np.round(missed_fields_val.geometry.area / 10 ** 4, 2)
         missed_fields_val["area_cat"] = missed_fields_val["area"].apply(lambda row: categorize_area(row,
@@ -100,9 +102,10 @@ def visualize_missing_stats(fields_val, fields_intersect_ids,
                                                           label=title)
         plt.show()
 
-        missed_fields_val = missed_fields_val.reset_index()
-        display_tile(gdf=missed_fields_val, bounds=None, id_name='index', tooltip=['area'],
-                     name_g=f"Visualization of {missing_fields} {title} field(s) with no overlapping segmented fields")
+        if plot_field:
+            missed_fields_val = missed_fields_val.reset_index()
+            display_tile(gdf=missed_fields_val, bounds=None, id_name='index', tooltip=['area'],
+                         name_g=f"Visualization of {missing_fields} {title} field(s) with no overlapping segmented fields")
 
 
 def metrics_computation(fields_intersect, col_max='ov_combined'):
@@ -174,10 +177,21 @@ def get_edge_metrics(fields_intersect):
         )
         mae_val_dists.append(mae_val_dist)
         mae_seg_dists.append(mae_seg_dist)
+        # The Hausdorff distance is the maximum distance between any point on the
+        # first set and its nearest point on the second set, and vice-versa
         hausdorff_dists.append(field_geom.hausdorff_distance(field_val_geom))
 
     fields_intersect["mae_val"] = mae_val_dists
     fields_intersect["mae_seg"] = mae_seg_dists
-    fields_intersect["mae_combined"] = fields_intersect["mae_val"] + fields_intersect["mae_seg"]
+    fields_intersect["mae_combined"] = (fields_intersect["mae_val"] + fields_intersect["mae_seg"]) / 2
     fields_intersect["hausdorff_dist"] = hausdorff_dists
     return fields_intersect
+
+
+def get_area_category(list_areas = [
+        0, 0.1, 0.5, 1.5, 2.5, 5, 12, 25, 50, 100, 1000
+    ]):
+    areas_cat = [(f"{list_areas[low_ind]}-"
+                  f"{list_areas[low_ind + 1] if low_ind + 1 < len(list_areas) else ''}") for low_ind in
+                 range(len(list_areas))]
+    return areas_cat
