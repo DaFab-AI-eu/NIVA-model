@@ -17,6 +17,7 @@ from eolearn.core import EOPatch
 
 from utils_plot import visualize_eopatch, display_cm, visualize_eopatch_obj
 from transform_vector2mask import get_masks_pred_gt
+from utils import compute_all_global_object_metrics
 
 # Add the src directory to the path
 src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -152,7 +153,7 @@ def total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path):
     tile_id = os.path.splitext(os.path.split(tile_meta_path)[1])[0]
     abs_path = os.path.split(tile_meta_path)[0]
     list_areas = [
-        0, 1e-3, 1e-2, 0.5, 1.5, 2.5, 5, 12, 25, 50, 100, 1000
+        0, 0.1, 0.5, 1.5, 2.5, 5, 12, 25, 50, 100, 1000
     ]
     areas_cat = [(f"{list_areas[low_ind]}-"
                   f"{list_areas[low_ind + 1] if low_ind + 1 < len(list_areas) else ''}") for low_ind in range(len(list_areas))]
@@ -184,6 +185,15 @@ def total_general_metrics(cadastre_tile_path, pred_file_path, tile_meta_path):
 
     # add general metadata of the tile
     metrics_dict.update(boundaries[general_meta_col].iloc[0].to_dict())
+
+    # add general obj metrics
+    gt_tile = gpd.read_file(cadastre_tile_path)
+    gt_tile = gt_tile.to_crs(epsg=epsg)
+
+    pred_tile = gpd.read_file(pred_file_path)
+    pred_tile = pred_tile.to_crs(epsg=epsg)
+    metrics_dict.update(compute_all_global_object_metrics(gt_tile, pred_tile, tile_id, folder_save=abs_path,
+                                                          gt_area_ls=1000, pred_area_ls=900))
     return metrics_dict
 
 def get_object_level_metrics(y_true_shapes, y_pred_shapes, iou_threshold=0.5):
@@ -352,7 +362,7 @@ def main():
     for eopatch_folder in tqdm(eopatches_path):
         # creates gt and predicted masks from vectors (MOST important method)
         get_masks_pred_gt(eopatch_folder, cadastre_tile_path, pred_file_path)
-        #VISUALIZE = True
+        VISUALIZE = True
         if VISUALIZE:  # for all visualizations eopatch image (rgb) bands are needed
             eopatch = EOPatch.load(eopatch_folder)
             visualize_eopatch(eopatch, eopatch_folder=eopatch_folder)
