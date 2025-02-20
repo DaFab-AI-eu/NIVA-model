@@ -65,17 +65,18 @@ def main():
     country = args.country
     SENTINEL2_DIR = args.sentinel_dir
     split_filepath = os.path.join(SENTINEL2_DIR, split_filepath) if not args.split_filepath else args.split_filepath
-    SENTINEL2_DIR = os.path.join(SENTINEL2_DIR, country)
     flag_masks_only = args.flag_masks_only
 
     data = pd.read_csv(split_filepath)
-    fold_data = data[data["Country"] == country]
+    if country in ['NL', 'AT', 'SE', 'LU', 'ES', 'SI', 'FR']:
+        SENTINEL2_DIR = os.path.join(SENTINEL2_DIR, country)
+        data = data[data["Country"] == country]
     os.makedirs(os.path.join(SENTINEL2_DIR, "masks"), exist_ok=True)
     if not flag_masks_only:
         os.makedirs(os.path.join(SENTINEL2_DIR, "images"), exist_ok=True)
-        asyncio.run(download_images(fold_data, SENTINEL2_DIR))
+        asyncio.run(download_images(data, SENTINEL2_DIR))
     else:
-        asyncio.run(download_mask(fold_data, SENTINEL2_DIR))
+        asyncio.run(download_mask(data, SENTINEL2_DIR))
 
 
 if __name__ == "__main__":
