@@ -411,7 +411,7 @@ def display_cm(cm):
 def visualize_eopatch_obj(eop, masks):
     fig, axis = plt.subplots(figsize=(15, 10), ncols=5, sharey=True)
     eop.vector_timeless['CADASTRE'].plot(ax=axis[0], color='green', alpha=0.5)
-    eop.vector_timeless['PREDICTED'].plot(ax=axis[0], color='red', alpha=0.5)
+    eop.vector_timeless['PREDICTED'].plot(ax=axis[0], color='red', alpha=0.5) # facecolor='none', edgecolor='k'
 
     for ind, (key, mask) in enumerate(masks.items()):
         mask.plot(ax=axis[ind+1], color='green', alpha=0.5)

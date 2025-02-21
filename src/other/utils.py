@@ -24,8 +24,9 @@ def convert_bounds(bbox, invert_y=False):
     return ((y1, x1), (y2, x2))
 
 
-def display_tile(gdf, bounds=None, id_name='Name', tooltip=['Name'], name_g="Tiles"):
-    fig = Figure(width="400px", height="500px")
+def display_tile(gdf, bounds=None, id_name='Name', tooltip=['Name'], name_g="Tiles",
+                 width="400px", height="500px"):
+    fig = Figure(width=width, height=height)
     map1 = folium.Map()
     fig.add_child(map1)
 
